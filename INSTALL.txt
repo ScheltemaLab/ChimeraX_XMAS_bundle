@@ -1,0 +1,5 @@
+- Store the bundle_info.xml file and src folder in a (new) folder of choice
+- Go to ChimeraX and type the command 'devel build “[path/to/folder]”'
+- Type the command 'devel install “[path/to/folder]”'
+- If an error message saying that there is no module named pandas is displayed, pip install pandas on the ChimeraX console (*\ChimeraX 1.2.5\bin\ChimeraX-console) via the command prompt (similar for any other modules)
+- The bundle can be found under Tools - General as 'Test Bundle 5'
