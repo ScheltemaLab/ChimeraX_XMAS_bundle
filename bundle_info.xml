@@ -12,13 +12,14 @@ will be displayed without the ChimeraX- prefix.
   <!-- Additional information about bundle source -->
   <Author>I.M. Lagerwaard</Author>
   <Email>i.m.lagerwaard@students.uu.nl</Email>
-  <URL>https://www.hecklab.com/</URL>
+  <URL>https://scheltemalab.wpcomstaging.com/</URL>
 
   <!-- Synopsis is a one-line description
        Description is a full multi-line description -->
-  <Synopsis>Second test bundle</Synopsis>
-  <Description>A simple gui in which the path to a file containing XL data
-can be typed. From this file, the pseudobonds are created.
+  <Synopsis>Tool to map crosslink data on structural models</Synopsis>
+  <Description>A gui in which a Proteome Discoverer output file containing crosslink data
+    can be selected. From this file, peptide pairs are aligned to structural ChimeraX models. Pseudobonds for
+    perfectly aligning peptide pairs are opened.
   </Description>
 
   <!-- Categories is a list where this bundle should appear -->
@@ -45,7 +46,7 @@ can be typed. From this file, the pseudobonds are created.
     <!-- ChimeraX classifiers describe supplied functionality -->
     <!-- Register a graphical interface tool -->
     <ChimeraXClassifier>ChimeraX :: Tool :: Crosslink Mapper ::
-      General :: First XL bundle</ChimeraXClassifier>
+      General :: Align crosslinked peptides to structures</ChimeraXClassifier>
   </Classifiers>
 
 </BundleInfo>
