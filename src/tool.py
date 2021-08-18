@@ -14,7 +14,7 @@
 from chimerax.core.tools import ToolInstance
 
 
-class TestBundle5(ToolInstance):
+class CrosslinkMapper(ToolInstance):
 
     # Inheriting from ToolInstance makes us known to the ChimeraX tool mangager,
     # so we can be notified and take appropriate action when sessions are closed,
@@ -34,7 +34,7 @@ class TestBundle5(ToolInstance):
 
         # Set name displayed on title bar (defaults to tool_name)
         # Must be after the superclass init, which would override it.
-        self.display_name = "Test Bundle 5"
+        self.display_name = "Crosslink Mapper"
 
         # Create the main window for our tool.  The window object will have
         # a "ui_area" where we place the widgets composing our interface.

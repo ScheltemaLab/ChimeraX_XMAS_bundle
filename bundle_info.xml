@@ -5,8 +5,8 @@ When uploaded to the ChimeraX toolshed, the bundle
 will be displayed without the ChimeraX- prefix.
 -->
 
-<BundleInfo name="ChimeraX-TestBundle5"
-	    version="0.1" package="chimerax.test_bundle5"
+<BundleInfo name="ChimeraX-CrosslinkMapper"
+	    version="0.1" package="chimerax.crosslink_mapper"
   	    minSessionVersion="1" maxSessionVersion="1">
 
   <!-- Additional information about bundle source -->
@@ -44,7 +44,7 @@ can be typed. From this file, the pseudobonds are created.
     <PythonClassifier>License :: Freeware</PythonClassifier>
     <!-- ChimeraX classifiers describe supplied functionality -->
     <!-- Register a graphical interface tool -->
-    <ChimeraXClassifier>ChimeraX :: Tool :: Test Bundle 5 ::
+    <ChimeraXClassifier>ChimeraX :: Tool :: Crosslink Mapper ::
       General :: First XL bundle</ChimeraXClassifier>
   </Classifiers>
 
