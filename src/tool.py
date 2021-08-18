@@ -135,9 +135,14 @@ class TestBundle5(ToolInstance):
 
         # Store all peptide pairs in list of lists
         # Each peptide is stored as a dictionary, that contains the peptide sequence and the position of the crosslinked residue.
+
         def create_peptide_dictionary(input_peptide):
-            peptide_sequence = input_peptide.replace("[", "").replace("]", "")
-            crosslink_position = input_peptide.index("[")
+            if input_peptide.count("[") == 1:
+                peptide_sequence = input_peptide.replace("[", "").replace("]", "")
+                crosslink_position = input_peptide.index("[")
+            else:
+                peptide_sequence = input_peptide
+                crosslink_position = 0
             peptide_dictionary = {"Peptide sequence":peptide_sequence, "Crosslink position":crosslink_position, "Alignments":[]}
             return peptide_dictionary
 
