@@ -1,0 +1,13 @@
+### 1 ###  issue encountered when using a PD output table with missing values in the sequence (from Decoys)
+Peptide pair mapping of PD output file: D:/Thyl_DSSO_2/Thyl_DSSO_2/20181005_F1_Ag5_alban001_SA_TCxALL_PSIInewDB.xlsx
+Traceback (most recent call last):
+  File "C:\Users\alban001\AppData\Local\UCSF\ChimeraX\1.2\site-packages\chimerax\crosslink_mapper\tool.py", line 118, in run_button_clicked
+    input_pairs[i] = sorted([input_peptides_A[i], input_peptides_B[i]])
+TypeError: '<' not supported between instances of 'float' and 'str'
+
+TypeError: '<' not supported between instances of 'float' and 'str'
+
+File "C:\Users\alban001\AppData\Local\UCSF\ChimeraX\1.2\site-packages\chimerax\crosslink_mapper\tool.py", line 118, in run_button_clicked
+input_pairs[i] = sorted([input_peptides_A[i], input_peptides_B[i]])
+ 
+ __>> consider removing these line from the table before processing
