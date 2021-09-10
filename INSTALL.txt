@@ -6,5 +6,5 @@
 - Pip install the required modules (pandas and openpyxl) on the ChimeraX console, by running the following commands via your command prompt:
   - '"[path/to/console]" -m pip install pandas --user'
   - '"[path/to/console]" -m pip install openpyxl --user'
-For example, my [path/to/console] is C:\Program Files\ChimeraX 1.2.5\bin\ChimeraX-console.exe
+  For example, my [path/to/console] is C:\Program Files\ChimeraX 1.2.5\bin\ChimeraX-console.exe
 - The bundle can be found in the ChimeraX application under Tools - General as 'Crosslink Mapper'
