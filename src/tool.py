@@ -110,12 +110,24 @@ class CrosslinkMapper(ToolInstance):
         input_peptides_A = dataframe["Sequence A"].tolist()
         input_peptides_B = dataframe["Sequence B"].tolist()
 
-        number_of_peptide_pairs = len(dataframe.index)
-        input_pairs = [None] * number_of_peptide_pairs
+        input_pairs = []
+        # Keep track of peptide pairs with missing sequences
+        pairs_with_missing_sequence = 0
 
         # Peptides within the peptide pairs are sorted, to be able to remove inversely identical peptide pairs
-        for i in range(number_of_peptide_pairs):
-            input_pairs[i] = sorted([input_peptides_A[i], input_peptides_B[i]])
+        for i in range(len(dataframe.index)):
+            peptide_A = input_peptides_A[i]
+            peptide_B = input_peptides_B[i]
+            try:
+                input_pairs.append(sorted([peptide_A, peptide_B]))
+            # In case of missing sequence:
+            except:
+                pairs_with_missing_sequence += 1
+
+        if pairs_with_missing_sequence == 1:
+            print("1 peptide pair is disregarded due to missing peptide sequence")
+        elif pairs_with_missing_sequence >= 1:
+            print("%s peptide pairs are disregarded due to missing peptide sequence" % str(pairs_with_missing_sequence))
 
         # Duplicate peptide pairs are removed
         def deduplicate(lst):
@@ -131,7 +143,7 @@ class CrosslinkMapper(ToolInstance):
 
         # Display a message if duplicates have been removed
         number_of_deduplicated = len(input_pairs_deduplicated)
-        self.display_log_message("Unique peptide pairs: %s out of %s" % (number_of_deduplicated, number_of_peptide_pairs))
+        self.display_log_message("Unique peptide pairs: %s out of %s" % (number_of_deduplicated, len(input_pairs)))
 
         # Store all peptide pairs in list of lists
         # Each peptide is stored as a dictionary, that contains the peptide sequence and the position of the crosslinked residue.
