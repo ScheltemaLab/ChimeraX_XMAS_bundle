@@ -6,7 +6,7 @@ will be displayed without the ChimeraX- prefix.
 -->
 
 <BundleInfo name="ChimeraX-CrosslinkMapper"
-	    version="1" package="chimerax.crosslink_mapper"
+	    version="1.0.0" package="chimerax.crosslink_mapper"
   	    minSessionVersion="1" maxSessionVersion="1">
 
   <!-- Additional information about bundle source -->
