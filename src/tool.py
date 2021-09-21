@@ -187,7 +187,7 @@ class CrosslinkMapper(ToolInstance):
             short_name = self.get_short_filename(path_to_file)
             item = QTreeWidgetItem(self.file_selector)
             item.setText(0, short_name)
-            item.setCheckState(0, Qt.Unchecked)
+            item.setCheckState(0, Qt.Checked)
             item.setText(1, ID)
             i += 1
             self.evidence_files[ID] = path_to_file
@@ -690,9 +690,11 @@ class CrosslinkMapper(ToolInstance):
             # "id_string" attribute as ID
             if model.structure_type == "Non-pb":
                 treewidget = self.model_selector
+                checkstate = Qt.Checked
                 column_1_text = model.id_string
             elif model.structure_type == "Pb":
                 treewidget = self.pbonds_menu
+                checkstate = Qt.Unchecked
                 # For models in the pbonds menu that have been created
                 # with Crosslink Mapper, show the model's code
                 # NB: if Crosslink Mapper is closed and reopened in the
@@ -708,7 +710,7 @@ class CrosslinkMapper(ToolInstance):
         
             model.item = QTreeWidgetItem(treewidget)
             model.item.setText(0, model_name)
-            model.item.setCheckState(0, Qt.Unchecked)
+            model.item.setCheckState(0, checkstate)
             model.item.setText(1, column_1_text)
 
 
