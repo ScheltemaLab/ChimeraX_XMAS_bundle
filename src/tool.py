@@ -124,8 +124,7 @@ class CrosslinkMapper(ToolInstance):
         subset_button = QPushButton()
         subset_button.setText("Export data subsets (IN PROGRESS)")
 
-        # buttons_layout.addWidget(subset_button) - This button is 
-        # currently not in use
+        buttons_layout.addWidget(subset_button)
         # Upon clicking the subset button, a dialog is opened where the 
         # user can select the parameters for the data subset required
         subset_button.clicked.connect(self.show_subset_dialog)
@@ -577,7 +576,7 @@ class CrosslinkMapper(ToolInstance):
         # models selected in the pbonds menu
 
         from PyQt5.QtWidgets import (QGridLayout, QDialog, QListWidget,
-            QListWidgetItem, QLabel)
+            QListWidgetItem, QPushButton, QLabel)
         from PyQt5.QtCore import Qt
 
         layout = QGridLayout()
@@ -587,40 +586,61 @@ class CrosslinkMapper(ToolInstance):
 
         # Menu to select the models included in the subset    
         self.dialog_model_selector = QListWidget()
-        # Create an item that can check all models at once
-        self.item_all = QListWidgetItem(self.dialog_model_selector)
-        self.item_all.setText("All models")
-        self.item_all.setCheckState(Qt.Unchecked)
+
+        # Function to make items for a given QListWidget instance
+        def create_listwidgetitems(listwidget, lst, models=True, return_item=False):
+
+            if models:
+                length = len(lst)
+                text_list = [None] * length
+                for i in range(length):
+                    model = models[i]
+                    text_list[i] = [model.id_string, model]
+                text_list.sort()
+            else:
+                text_list = lst
+
+            for text in text_list:
+                item = QListWidgetItem(listwidget)
+                try:
+                    text = text[0]
+                    item.model = text[1]
+                except:
+                    pass
+                item.setText(text)
+                item.setCheckState(Qt.Checked)
+
+            if return_item:
+                return item
+
+        # Create an item that can (un)check all models at once
+        self.item_all = create_listwidgetitems(self.dialog_model_selector, ["All models"], models=False, return_item=True)
         # Connect a change of selection to the "check_all_models"
         # method. When "All models" has been checked, all models 
         # underneath it should also be checked
         self.dialog_model_selector.itemChanged.connect(self.check_all_models)
 
-        # Function to make items for a given QListWidget instance
-        def create_listwidgetitems(listwidget, text_list):
-            for text in text_list:
-                item = QListWidgetItem(listwidget)
-                item.setText(text)
-                item.setCheckState(Qt.Unchecked)
-
         # Get the IDs of all protein models that the selected
         # pseudobond models are connected to
-        model_ids = self.get_model_ids()
+        models = self.get_subselection()
 
         # Create an item for each model in the list of model IDs
-        if len(model_ids) > 0:
-            for model_id in model_ids:
-                create_listwidgetitems(self.dialog_model_selector, [model_id])
+        if len(models) > 0:
+        create_listwidgetitems(self.dialog_model_selector, models)
 
         # Menu to select whether only intralinks, only interlinks, or
         # both need to be exported
         link_selector = QListWidget()
-        create_listwidgetitems(link_selector, ["Intralinks", "Interlinks"])
+        create_listwidgetitems(link_selector, ["Intralinks", "Interlinks"], models=False)
+        
+        export_button = QPushButton("Export")
+        export_button.clicked.connect(self.export_subset)
 
         layout.addWidget(QLabel("Models:"), 0, 0)
         layout.addWidget(self.dialog_model_selector, 1, 0)
         layout.addWidget(QLabel("Link types:"), 0, 1)
         layout.addWidget(link_selector, 1, 1)
+        layout.addWidget(export_button, 2, 0)
 
         subset_dialog.setLayout(layout)
 
@@ -643,7 +663,7 @@ class CrosslinkMapper(ToolInstance):
                     current_item.setCheckState(Qt.Unchecked)
 
 
-    def get_model_ids(self):
+    def get_subselection(self, models=self.session.models):
 
         # For each selected pseudobond, the IDs of the models that it
         # is connected to are added to a set. This is then converted to
@@ -654,21 +674,38 @@ class CrosslinkMapper(ToolInstance):
             selected_pseudobonds)
         from chimerax.atomic.structure import Structure
         
-        model_ids = set()
+        subselection = set()
 
-        for model in self.session.models:
+        for model in models:
             if (isinstance(model, PseudobondGroup) 
                     or not isinstance(model, Structure)):
                 continue
+            model_atoms = model.atoms
             for pb in selected_pseudobonds(self.session):
                 for atom in pb.atoms:
-                    if atom in model.atoms:
-                        model_ids.add(model.id_string)
+                    if atom in model_atoms:
+                        subselection.add(models)
+        
+        return subselection
 
-        model_ids = list(model_ids)
-        model_ids.sort()
 
-        return model_ids
+    def export_subset(self, pseudobonds):
+
+        items = self.dialog_model_selector.selectedItems()
+        models = []
+        atoms = []
+
+        for item in items:
+            if item.text() == "All models":
+                continue
+            model_atoms = item.model.atoms
+            for atom in model_atoms:
+                atoms.append(atom)
+
+        for pb in pseudobonds:
+            atoms = pb.atoms
+            if (atoms[0] in atoms and atoms[1] in atoms):
+                
 
 
     def add_models(self, models):
