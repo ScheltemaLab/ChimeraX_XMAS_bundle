@@ -48,7 +48,7 @@ will be displayed without the ChimeraX- prefix.
     <!-- ChimeraX classifiers describe supplied functionality -->
     <!-- Register a graphical interface tool -->
     <ChimeraXClassifier>ChimeraX :: Tool :: Crosslink Mapper ::
-      General :: Align crosslinked peptides to structures</ChimeraXClassifier>
+      Structure Analysis :: Align crosslinked peptides to structures</ChimeraXClassifier>
   </Classifiers>
 
 </BundleInfo>

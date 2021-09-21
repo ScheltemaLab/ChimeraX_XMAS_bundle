@@ -7,4 +7,4 @@
   - '"[path/to/console]" -m pip install pandas --user'
   - '"[path/to/console]" -m pip install openpyxl --user'
   For example, my [path/to/console] is C:\Program Files\ChimeraX 1.2.5\bin\ChimeraX-console.exe
-- The bundle can be found in the ChimeraX application under Tools - General as 'Crosslink Mapper'
+- The bundle can be found in the ChimeraX application under 'Tools' - 'Structure Analysis' as 'Crosslink Mapper'
