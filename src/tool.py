@@ -122,7 +122,7 @@ class CrosslinkMapper(ToolInstance):
         pbonds_layout.addWidget(self.pbonds_menu)
 
         subset_button = QPushButton()
-        subset_button.setText("Export data subsets (IN PROGRESS)")
+        subset_button.setText("Export data subsets")
 
         buttons_layout.addWidget(subset_button)
         # Upon clicking the subset button, a dialog is opened where the 
@@ -315,19 +315,9 @@ class CrosslinkMapper(ToolInstance):
             elif sequence_info_lacking >= 1:
                 print("%s peptide pairs are disregarded due to"
                     % str(sequence_info_lacking),         
-                    "lacking sequence information")                    
+                    "lacking sequence information")
 
-            # Function that removes duplicate items from a list
-            def deduplicate(lst):
-                lst.sort()
-                last = object()
-                for item in lst:
-                    if item == last:
-                        continue
-                    yield item
-                    last = item
-
-            input_pairs_deduplicated = list(deduplicate(input_pairs))
+            input_pairs_deduplicated = list(self.deduplicate(input_pairs))
 
             # Print a message stating how many peptide pairs were unique
             number_of_deduplicated = len(input_pairs_deduplicated)
@@ -460,22 +450,7 @@ class CrosslinkMapper(ToolInstance):
             # Print a log message stating how many peptide pairs for
             # which perfect alignments have been found
             print("Unique peptide pairs with pseudobonds: %s" 
-                % number_of_aligned_pairs)
-
-            # Create a .pb file containing all non-overlapping, filtered
-            # pbonds
-            def write_pb_file(pb_file_path, pbonds):
-
-                number_of_pbonds = len(pbonds)
-                pb_file = open(pb_file_path, "w")
-                lines = [None] * number_of_pbonds
-                for i in range(number_of_pbonds):
-                    lines[i] = pbonds[i].line
-                lines_deduplicated = list(deduplicate(lines))
-                for line in lines_deduplicated:
-                    pb_file.write(line)
-                pb_file.close()
-    
+                % number_of_aligned_pairs)    
     
             if len(pbonds) > 0:
                 # Create a code for the model with all model IDs and
@@ -493,7 +468,7 @@ class CrosslinkMapper(ToolInstance):
                 if pb_file_name not in self.created_models.keys():
                     self.created_models[pb_file_name] = pb_file_code
                 # Write the .pb file  
-                write_pb_file(pb_file_path, pbonds)
+                self.write_pb_file(pb_file_path, pbonds)
                 # Open this .pb file in ChimeraX. It will be added to
                 # the pbonds menu via the "add_models" method that is
                 # called due to the "ADD_MODELS" trigger
@@ -527,12 +502,12 @@ class CrosslinkMapper(ToolInstance):
                 if number_of_overlapping_nonself > 0:
                     nonself_path = pb_file_path.replace(
                         ".pb", "_overlapping.pb")
-                    write_pb_file(nonself_path, pbonds_overlapping)
+                    self.write_pb_file(nonself_path, pbonds_overlapping)
                 
                 if number_of_overlapping_self > 0:
                     self_path = pb_file_path.replace(
                         ".pb", "_overlapping_selflinks.pb")
-                    write_pb_file(self_path, pbonds_overlapping_selflinks)
+                    self.write_pb_file(self_path, pbonds_overlapping_selflinks)
 
             # Tell the user in which files the pseudobonds from
             # overlapping peptides can be found
@@ -551,7 +526,38 @@ class CrosslinkMapper(ToolInstance):
             elif (number_of_overlapping_nonself == 0
                     and number_of_overlapping_self > 0):
                 print("All of these pseudobonds were self-links, "
-                    "and stored in %s." % self_path)
+                    "and stored in %s." % self_path)                    
+
+
+    def deduplicate(self, lst):
+
+        # Method that removes duplicate items from a list
+
+        lst.sort()
+        last = object()
+        for item in lst:
+            if item == last:
+                continue
+            yield item
+            last = item
+
+
+    def write_pb_file(self, pb_file_path, pbonds):
+
+        # Write a .pb file
+
+        number_of_pbonds = len(pbonds)
+        pb_file = open(pb_file_path, "w")
+        lines = [None] * number_of_pbonds
+        for i in range(number_of_pbonds):
+            try:
+                lines[i] = pbonds[i].line
+            except:
+                lines[i] = pbonds[i]
+        lines_deduplicated = list(self.deduplicate(lines))
+        for line in lines_deduplicated:
+            pb_file.write(line)
+        pb_file.close()
 
 
     def check_signal(self, item, column):
@@ -575,63 +581,34 @@ class CrosslinkMapper(ToolInstance):
         # Through this dialog, the user can export a subset of the
         # models selected in the pbonds menu
 
-        from PyQt5.QtWidgets import (QGridLayout, QDialog, QListWidget,
+        from PyQt5.QtWidgets import (QGridLayout, QDialog, QTreeWidget, QTreeWidgetItem, QListWidget,
             QListWidgetItem, QPushButton, QLabel)
         from PyQt5.QtCore import Qt
 
         layout = QGridLayout()
 
-        subset_dialog = QDialog()
-        subset_dialog.setWindowTitle("Export a subselection of pseudobonds")
+        self.subset_dialog = QDialog()
+        self.subset_dialog.setWindowTitle("Export subset of the selected pseudobonds")
 
-        # Menu to select the models included in the subset    
-        self.dialog_model_selector = QListWidget()
+        self.dialog_model_selector = QTreeWidget()
+        self.dialog_model_selector.setHeaderLabels(["Name", "ID"])
 
-        # Function to make items for a given QListWidget instance
-        def create_listwidgetitems(listwidget, lst, models=True, return_item=False):
-
-            if models:
-                length = len(lst)
-                text_list = [None] * length
-                for i in range(length):
-                    model = models[i]
-                    text_list[i] = [model.id_string, model]
-                text_list.sort()
-            else:
-                text_list = lst
-
-            for text in text_list:
-                item = QListWidgetItem(listwidget)
-                try:
-                    text = text[0]
-                    item.model = text[1]
-                except:
-                    pass
-                item.setText(text)
-                item.setCheckState(Qt.Checked)
-
-            if return_item:
-                return item
-
-        # Create an item that can (un)check all models at once
-        self.item_all = create_listwidgetitems(self.dialog_model_selector, ["All models"], models=False, return_item=True)
-        # Connect a change of selection to the "check_all_models"
-        # method. When "All models" has been checked, all models 
-        # underneath it should also be checked
-        self.dialog_model_selector.itemChanged.connect(self.check_all_models)
-
-        # Get the IDs of all protein models that the selected
-        # pseudobond models are connected to
-        models = self.get_subselection()
-
-        # Create an item for each model in the list of model IDs
-        if len(models) > 0:
-        create_listwidgetitems(self.dialog_model_selector, models)
+        models = self.get_models()
+        for model in models:
+            item = QTreeWidgetItem(self.dialog_model_selector)
+            item.setText(0, model.name)
+            item.setText(1, model.id_string)
+            item.setCheckState(0, Qt.Checked)
+            item.model = model
 
         # Menu to select whether only intralinks, only interlinks, or
         # both need to be exported
         link_selector = QListWidget()
-        create_listwidgetitems(link_selector, ["Intralinks", "Interlinks"], models=False)
+        link_types = ["Intralinks", "Interlinks"]
+        for link_type in link_types:
+            item = QListWidgetItem(link_selector)
+            item.setText(link_type)
+            item.setCheckState(Qt.Checked)
         
         export_button = QPushButton("Export")
         export_button.clicked.connect(self.export_subset)
@@ -642,28 +619,12 @@ class CrosslinkMapper(ToolInstance):
         layout.addWidget(link_selector, 1, 1)
         layout.addWidget(export_button, 2, 0)
 
-        subset_dialog.setLayout(layout)
+        self.subset_dialog.setLayout(layout)
 
-        subset_dialog.exec_()
-
-
-    def check_all_models(self, item):
-
-        # if the "All models" checkbox has been (un)checked, all other
-        # checkboxes also need to be (un)checked
-
-        from PyQt5.QtCore import Qt
-
-        if item == self.item_all:
-            for i in range(1, self.dialog_model_selector.count()):
-                current_item = self.dialog_model_selector.item(i)
-                if item.checkState() == Qt.Checked:
-                    current_item.setCheckState(Qt.Checked)
-                else:
-                    current_item.setCheckState(Qt.Unchecked)
+        self.subset_dialog.show()
 
 
-    def get_subselection(self, models=self.session.models):
+    def get_models(self):
 
         # For each selected pseudobond, the IDs of the models that it
         # is connected to are added to a set. This is then converted to
@@ -676,7 +637,7 @@ class CrosslinkMapper(ToolInstance):
         
         subselection = set()
 
-        for model in models:
+        for model in self.session.models:
             if (isinstance(model, PseudobondGroup) 
                     or not isinstance(model, Structure)):
                 continue
@@ -684,29 +645,58 @@ class CrosslinkMapper(ToolInstance):
             for pb in selected_pseudobonds(self.session):
                 for atom in pb.atoms:
                     if atom in model_atoms:
-                        subselection.add(models)
+                        subselection.add(model)
         
-        return subselection
+        return list(subselection)
 
 
-    def export_subset(self, pseudobonds):
+    def export_subset(self):
 
-        items = self.dialog_model_selector.selectedItems()
-        models = []
+        from PyQt5.QtWidgets import QTreeWidgetItemIterator
+
+        pseudobonds = self.get_selected_pseudobonds()
         atoms = []
+        valid_pseudobonds = []
 
-        for item in items:
-            if item.text() == "All models":
-                continue
-            model_atoms = item.model.atoms
-            for atom in model_atoms:
-                atoms.append(atom)
+        iterator = QTreeWidgetItemIterator(self.dialog_model_selector, QTreeWidgetItemIterator.Checked)
+
+        something_checked = True
+
+        if not iterator.value():
+            print("Please check one or multiple models")
+            something_checked = False
+        else:
+            while iterator.value():
+                item = iterator.value()
+                model_atoms = item.model.atoms
+                for atom in model_atoms:
+                    atoms.append(atom)
+                iterator += 1
 
         for pb in pseudobonds:
-            atoms = pb.atoms
-            if (atoms[0] in atoms and atoms[1] in atoms):
-                
+            atom1, atom2 = pb.atoms
+            if (atom1 in atoms and atom2 in atoms):
+                atom1_string = atom1.string(style="command line", omit_structure=False)
+                atom2_string = atom2.string(style="command line", omit_structure=False)
+                atoms_sorted = sorted([atom1_string, atom2_string])
+                valid_pseudobonds.append(atoms_sorted[0] + " " + atoms_sorted[1] + "\n")
 
+        if (len(valid_pseudobonds) == 0 and something_checked):
+            print("No pseudobonds match the criteria")
+        else:
+            self.write_pb_file("C:/Users/ilsel/export.pb", valid_pseudobonds)
+            self.subset_dialog.close()
+
+
+
+    def get_selected_pseudobonds(self):
+
+        from chimerax.atomic.pbgroup import selected_pseudobonds
+
+        pbs = selected_pseudobonds(self.session)
+
+        return pbs
+                
 
     def add_models(self, models):
 
@@ -725,13 +715,14 @@ class CrosslinkMapper(ToolInstance):
             model_name = model.name
             # For models in the model selector, show the model's
             # "id_string" attribute as ID
+            checkstate = Qt.Checked
             if model.structure_type == "Non-pb":
                 treewidget = self.model_selector
-                checkstate = Qt.Checked
                 column_1_text = model.id_string
             elif model.structure_type == "Pb":
                 treewidget = self.pbonds_menu
-                checkstate = Qt.Unchecked
+                if not model.get_selected():
+                    checkstate = Qt.Unchecked
                 # For models in the pbonds menu that have been created
                 # with Crosslink Mapper, show the model's code
                 # NB: if Crosslink Mapper is closed and reopened in the
@@ -746,9 +737,11 @@ class CrosslinkMapper(ToolInstance):
                     column_1_text = "N/A"
         
             model.item = QTreeWidgetItem(treewidget)
-            model.item.setText(0, model_name)
-            model.item.setCheckState(0, checkstate)
-            model.item.setText(1, column_1_text)
+            item = model.item
+            item.setText(0, model_name)
+            item.setCheckState(0, checkstate)
+            item.setText(1, column_1_text)
+            item.model = model
 
 
     def get_structure_type(self, model):
@@ -796,8 +789,6 @@ class CrosslinkMapper(ToolInstance):
         # Called upon change of model selection, to adjust the
         # CheckState of models in the pbonds menu, if necessary
 
-        from chimerax.atomic.pbgroup import PseudobondGroup
-        from PyQt5.QtWidgets import QTreeWidgetItemIterator
         from PyQt5.QtCore import Qt
 
         for model in self.session.models:
