@@ -75,6 +75,7 @@ class CrosslinkMapper(ToolInstance):
         # open in the session
         self.model_selector = QTreeWidget()
         self.model_selector.setHeaderLabels(["Name", "ID"])
+        self.model_selector.setColumnWidth(0, 200)
         self.model_selector.setMinimumHeight(minimum_tree_height)
 
         # A treewidget that will contain PD evidence files that the user
@@ -160,9 +161,9 @@ class CrosslinkMapper(ToolInstance):
         from PyQt5.QtCore import Qt
 
         file_dialog = QFileDialog()
+        # Set file mode to existing files to enable selection of multiple files
         file_dialog.setFileMode(QFileDialog.ExistingFiles)
-        selected_files, _ = file_dialog.getOpenFileNames(
-            None, "Select evidence files", "", "Excel (*.xlsx)")
+        selected_files, _ = QFileDialog.getOpenFileNames(None, "Select evidence files", "", "Excel (*.xlsx)")
 
         # Create a dictionary containing the evidence files to avoid 
         # showing the same file multiple times
@@ -581,6 +582,11 @@ class CrosslinkMapper(ToolInstance):
         # Through this dialog, the user can export a subset of the
         # models selected in the pbonds menu
 
+        pseudobonds = self.get_selected_pseudobonds()
+        if len(pseudobonds) == 0:
+            print("Please select pseudobonds")
+            return
+
         from PyQt5.QtWidgets import (QGridLayout, QDialog, QTreeWidget, QTreeWidgetItem, QListWidget,
             QListWidgetItem, QPushButton, QLabel)
         from PyQt5.QtCore import Qt
@@ -603,20 +609,24 @@ class CrosslinkMapper(ToolInstance):
 
         # Menu to select whether only intralinks, only interlinks, or
         # both need to be exported
-        link_selector = QListWidget()
+        self.link_selector = QListWidget()
         link_types = ["Intralinks", "Interlinks"]
         for link_type in link_types:
-            item = QListWidgetItem(link_selector)
+            item = QListWidgetItem(self.link_selector)
             item.setText(link_type)
             item.setCheckState(Qt.Checked)
+        if len(models) == 1:
+            item = self.link_selector.findItems("Interlinks", Qt.MatchExactly)[0]
+            item.setFlags(Qt.NoItemFlags)
+
         
         export_button = QPushButton("Export")
-        export_button.clicked.connect(self.export_subset)
+        export_button.clicked.connect(lambda: self.export_subset(pseudobonds))
 
         layout.addWidget(QLabel("Models:"), 0, 0)
         layout.addWidget(self.dialog_model_selector, 1, 0)
-        layout.addWidget(QLabel("Link types:"), 0, 1)
-        layout.addWidget(link_selector, 1, 1)
+        layout.addWidget(QLabel("Links:"), 0, 1)
+        layout.addWidget(self.link_selector, 1, 1)
         layout.addWidget(export_button, 2, 0)
 
         self.subset_dialog.setLayout(layout)
@@ -644,49 +654,79 @@ class CrosslinkMapper(ToolInstance):
             model_atoms = model.atoms
             for pb in selected_pseudobonds(self.session):
                 for atom in pb.atoms:
-                    if atom in model_atoms:
-                        subselection.add(model)
+                    if not atom in model_atoms:
+                        continue
+                    if not hasattr(pb, "models"):
+                        pb.models = set()
+                    pb.models.add(model)
+                    subselection.add(model)
         
         return list(subselection)
 
 
-    def export_subset(self):
+    def export_subset(self, pseudobonds):
 
-        from PyQt5.QtWidgets import QTreeWidgetItemIterator
+        from PyQt5.QtWidgets import QFileDialog, QTreeWidgetItemIterator
+        from PyQt5.QtCore import Qt
 
-        pseudobonds = self.get_selected_pseudobonds()
-        atoms = []
-        valid_pseudobonds = []
+        checked = True
 
-        iterator = QTreeWidgetItemIterator(self.dialog_model_selector, QTreeWidgetItemIterator.Checked)
-
-        something_checked = True
-
-        if not iterator.value():
+        model_iterator = QTreeWidgetItemIterator(self.dialog_model_selector, QTreeWidgetItemIterator.Checked)
+        if not model_iterator.value():
             print("Please check one or multiple models")
-            something_checked = False
-        else:
-            while iterator.value():
-                item = iterator.value()
-                model_atoms = item.model.atoms
-                for atom in model_atoms:
-                    atoms.append(atom)
-                iterator += 1
+            checked = False
+
+        links = []
+        for i in range(self.link_selector.count()):
+            item = self.link_selector.item(i)
+            if item.checkState() == Qt.Unchecked:
+                continue
+            links.append(item.text())
+        number_of_links = len(links)
+        if number_of_links == 0:
+            print("Please check one or more links")
+            checked = False
+
+        if not checked:
+            return
+
+        models = []
+        valid_pseudobonds = []
+        
+        while model_iterator.value():
+            item = model_iterator.value()
+            models.append(item.model)
+            model_iterator += 1
 
         for pb in pseudobonds:
+            in_models = True
+            for model in pb.models:
+                if model not in models:
+                    in_models = False
+                    break
+            if not in_models:
+                continue
+            if number_of_links == 1:
+                link = links[0]
+                number_of_models = len(pb.models)
+                if (link == "Intralinks" and number_of_models != 1):
+                    continue
+                elif (link == "Interlinks" and number_of_models != 2):
+                    continue
             atom1, atom2 = pb.atoms
-            if (atom1 in atoms and atom2 in atoms):
-                atom1_string = atom1.string(style="command line", omit_structure=False)
-                atom2_string = atom2.string(style="command line", omit_structure=False)
-                atoms_sorted = sorted([atom1_string, atom2_string])
-                valid_pseudobonds.append(atoms_sorted[0] + " " + atoms_sorted[1] + "\n")
+            atom1_string = atom1.string(style="command line", omit_structure=False)
+            atom2_string = atom2.string(style="command line", omit_structure=False)
+            atoms_sorted = sorted([atom1_string, atom2_string])
+            valid_pseudobonds.append(atoms_sorted[0] + " " + atoms_sorted[1] + "\n")
 
-        if (len(valid_pseudobonds) == 0 and something_checked):
+        if len(valid_pseudobonds) == 0:
             print("No pseudobonds match the criteria")
         else:
-            self.write_pb_file("C:/Users/ilsel/export.pb", valid_pseudobonds)
+            file_path, _ = QFileDialog.getSaveFileName(self.subset_dialog, "Save pseudobonds", "", "*.pb")
+            if file_path == "":
+                return
+            self.write_pb_file(file_path, valid_pseudobonds)
             self.subset_dialog.close()
-
 
 
     def get_selected_pseudobonds(self):
