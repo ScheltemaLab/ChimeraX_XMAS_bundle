@@ -582,7 +582,8 @@ class CrosslinkMapper(ToolInstance):
         # Through this dialog, the user can export a subset of the
         # models selected in the pbonds menu
 
-        pseudobonds = self.get_selected_pseudobonds()
+        pseudobonds, models = self.get_pseudobonds_models()
+
         if len(pseudobonds) == 0:
             print("Please select pseudobonds")
             return
@@ -599,13 +600,14 @@ class CrosslinkMapper(ToolInstance):
         self.dialog_model_selector = QTreeWidget()
         self.dialog_model_selector.setHeaderLabels(["Name", "ID"])
 
-        models = self.get_models()
         for model in models:
             item = QTreeWidgetItem(self.dialog_model_selector)
             item.setText(0, model.name)
             item.setText(1, model.id_string)
             item.setCheckState(0, Qt.Checked)
             item.model = model
+
+        self.dialog_model_selector.sortItems(1, Qt.AscendingOrder)
 
         # Menu to select whether only intralinks, only interlinks, or
         # both need to be exported
@@ -618,7 +620,6 @@ class CrosslinkMapper(ToolInstance):
         if len(models) == 1:
             item = self.link_selector.findItems("Interlinks", Qt.MatchExactly)[0]
             item.setFlags(Qt.NoItemFlags)
-
         
         export_button = QPushButton("Export")
         export_button.clicked.connect(lambda: self.export_subset(pseudobonds))
@@ -634,7 +635,7 @@ class CrosslinkMapper(ToolInstance):
         self.subset_dialog.show()
 
 
-    def get_models(self):
+    def get_pseudobonds_models(self):
 
         # For each selected pseudobond, the IDs of the models that it
         # is connected to are added to a set. This is then converted to
@@ -644,8 +645,9 @@ class CrosslinkMapper(ToolInstance):
         from chimerax.atomic.pbgroup import (PseudobondGroup,
             selected_pseudobonds)
         from chimerax.atomic.structure import Structure
-        
-        subselection = set()
+
+        pbs = []
+        models = set()
 
         for model in self.session.models:
             if (isinstance(model, PseudobondGroup) 
@@ -653,15 +655,18 @@ class CrosslinkMapper(ToolInstance):
                 continue
             model_atoms = model.atoms
             for pb in selected_pseudobonds(self.session):
+                if not pb.group.name.endswith(".pb"):
+                    continue
+                pbs.append(pb)
                 for atom in pb.atoms:
                     if not atom in model_atoms:
                         continue
                     if not hasattr(pb, "models"):
                         pb.models = set()
                     pb.models.add(model)
-                    subselection.add(model)
-        
-        return list(subselection)
+                    models.add(model)
+
+        return pbs, list(models)
 
 
     def export_subset(self, pseudobonds):
@@ -673,7 +678,7 @@ class CrosslinkMapper(ToolInstance):
 
         model_iterator = QTreeWidgetItemIterator(self.dialog_model_selector, QTreeWidgetItemIterator.Checked)
         if not model_iterator.value():
-            print("Please check one or multiple models")
+            print("Please check one or more models")
             checked = False
 
         links = []
@@ -727,15 +732,6 @@ class CrosslinkMapper(ToolInstance):
                 return
             self.write_pb_file(file_path, valid_pseudobonds)
             self.subset_dialog.close()
-
-
-    def get_selected_pseudobonds(self):
-
-        from chimerax.atomic.pbgroup import selected_pseudobonds
-
-        pbs = selected_pseudobonds(self.session)
-
-        return pbs
                 
 
     def add_models(self, models):
