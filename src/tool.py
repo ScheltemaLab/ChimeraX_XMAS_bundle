@@ -469,7 +469,7 @@ class CrosslinkMapper(ToolInstance):
                 if pb_file_name not in self.created_models.keys():
                     self.created_models[pb_file_name] = pb_file_code
                 # Write the .pb file  
-                self.write_pb_file(pb_file_path, pbonds)
+                self.write_file(pb_file_path, pbonds)
                 # Open this .pb file in ChimeraX. It will be added to
                 # the pbonds menu via the "add_models" method that is
                 # called due to the "ADD_MODELS" trigger
@@ -503,12 +503,12 @@ class CrosslinkMapper(ToolInstance):
                 if number_of_overlapping_nonself > 0:
                     nonself_path = pb_file_path.replace(
                         ".pb", "_overlapping.pb")
-                    self.write_pb_file(nonself_path, pbonds_overlapping)
+                    self.write_file(nonself_path, pbonds_overlapping)
                 
                 if number_of_overlapping_self > 0:
                     self_path = pb_file_path.replace(
                         ".pb", "_overlapping_selflinks.pb")
-                    self.write_pb_file(self_path, pbonds_overlapping_selflinks)
+                    self.write_file(self_path, pbonds_overlapping_selflinks)
 
             # Tell the user in which files the pseudobonds from
             # overlapping peptides can be found
@@ -543,12 +543,12 @@ class CrosslinkMapper(ToolInstance):
             last = item
 
 
-    def write_pb_file(self, pb_file_path, pbonds):
+    def write_file(self, file_path, pbonds):
 
-        # Write a .pb file
+        # Write a file
 
         number_of_pbonds = len(pbonds)
-        pb_file = open(pb_file_path, "w")
+        created_file = open(file_path, "w")
         lines = [None] * number_of_pbonds
         for i in range(number_of_pbonds):
             try:
@@ -557,8 +557,8 @@ class CrosslinkMapper(ToolInstance):
                 lines[i] = pbonds[i]
         lines_deduplicated = list(self.deduplicate(lines))
         for line in lines_deduplicated:
-            pb_file.write(line)
-        pb_file.close()
+            created_file.write(line)
+        created_file.close()
 
 
     def check_signal(self, item, column):
@@ -589,7 +589,7 @@ class CrosslinkMapper(ToolInstance):
             return
 
         from PyQt5.QtWidgets import (QGridLayout, QDialog, QTreeWidget, QTreeWidgetItem, QListWidget,
-            QListWidgetItem, QPushButton, QLabel)
+            QListWidgetItem, QPushButton, QHBoxLayout, QCheckBox, QLabel)
         from PyQt5.QtCore import Qt
 
         layout = QGridLayout()
@@ -622,15 +622,28 @@ class CrosslinkMapper(ToolInstance):
             item.setFlags(Qt.NoItemFlags)
         
         export_button = QPushButton("Export")
-        export_button.clicked.connect(lambda: self.export_subset(pseudobonds))
+
+        self.checkbox_pb = QCheckBox(".pb")
+        self.checkbox_pb.setChecked(True)
+        self.checkbox_disvis = QCheckBox("DisVis")
+        self.checkbox_haddock = QCheckBox("HADDOCK")
+        checkboxes = {"Pb":self.checkbox_pb, "DisVis":self.checkbox_disvis, "HADDOCK":self.checkbox_haddock}
+        
+        checkbox_layout = QHBoxLayout()
+        for checkbox in checkboxes:
+            current = checkboxes[checkbox]
+            checkbox_layout.addWidget(current)
 
         layout.addWidget(QLabel("Models:"), 0, 0)
         layout.addWidget(self.dialog_model_selector, 1, 0)
         layout.addWidget(QLabel("Links:"), 0, 1)
         layout.addWidget(self.link_selector, 1, 1)
         layout.addWidget(export_button, 2, 0)
+        layout.addLayout(checkbox_layout, 2, 1)
 
         self.subset_dialog.setLayout(layout)
+        
+        export_button.clicked.connect(lambda: self.export_subset(pseudobonds, checkboxes))
 
         self.subset_dialog.show()
 
@@ -669,7 +682,7 @@ class CrosslinkMapper(ToolInstance):
         return pbs, list(models)
 
 
-    def export_subset(self, pseudobonds):
+    def export_subset(self, pseudobonds, checkboxes):
 
         from PyQt5.QtWidgets import QFileDialog, QTreeWidgetItemIterator
         from PyQt5.QtCore import Qt
@@ -697,6 +710,7 @@ class CrosslinkMapper(ToolInstance):
 
         models = []
         valid_pseudobonds = []
+        pb_lines = []
         
         while model_iterator.value():
             item = model_iterator.value()
@@ -722,16 +736,156 @@ class CrosslinkMapper(ToolInstance):
             atom1_string = atom1.string(style="command line", omit_structure=False)
             atom2_string = atom2.string(style="command line", omit_structure=False)
             atoms_sorted = sorted([atom1_string, atom2_string])
-            valid_pseudobonds.append(atoms_sorted[0] + " " + atoms_sorted[1] + "\n")
+            valid_pseudobonds.append(pb)
+            pb_lines.append(atoms_sorted[0] + " " + atoms_sorted[1] + "\n")
 
         if len(valid_pseudobonds) == 0:
             print("No pseudobonds match the criteria")
         else:
-            file_path, _ = QFileDialog.getSaveFileName(self.subset_dialog, "Save pseudobonds", "", "*.pb")
-            if file_path == "":
-                return
-            self.write_pb_file(file_path, valid_pseudobonds)
-            self.subset_dialog.close()
+            if checkboxes["Pb"].isChecked():
+                file_path, _ = QFileDialog.getSaveFileName(self.subset_dialog, "Save pseudobonds", "", "*.pb")
+                if file_path == "":
+                    return
+                self.write_file(file_path, pb_lines)
+                self.subset_dialog.close()
+            if checkboxes["DisVis"].isChecked():
+                self.show_disvis_dialog(models, valid_pseudobonds)
+
+
+    def show_disvis_dialog(self, models, pseudobonds):
+
+        from PyQt5.QtWidgets import QDialog, QHBoxLayout, QVBoxLayout, QGridLayout, QLabel, QButtonGroup, QRadioButton, QLineEdit, QDialogButtonBox
+        from PyQt5.QtGui import QDoubleValidator
+
+        self.disvis_dialog = QDialog(self.subset_dialog)
+        self.disvis_dialog.setWindowTitle("Create DisVis input file")
+
+        models_layout = QHBoxLayout()
+        fix_layout = QVBoxLayout()
+        scanning_layout = QVBoxLayout()
+        distances_layout = QGridLayout()
+        outer_layout = QVBoxLayout()
+
+        chain_selection = {"Fix chain:":fix_layout, "Scanning chain:":scanning_layout}
+        groups = [None] * len(chain_selection)
+
+        i = 0  
+        for chain in chain_selection:
+            layout = chain_selection[chain]
+            layout.addWidget(QLabel(chain))
+            group = QButtonGroup(self.disvis_dialog)
+            for model in models:
+                model_string = model.name + " (" + model.id_string + ")"
+                button = QRadioButton(model_string)
+                button.model = model
+                group.addButton(button)
+                layout.addWidget(button)
+            group.buttons()[0].toggle()   
+            groups[i] = group            
+            i += 1 
+            models_layout.addLayout(layout)
+        
+        distance_options = ["Minimum", "Maximum"]
+        number_of_options = len(distance_options)
+        line_edits = [None] * number_of_options
+        for i in range(number_of_options):
+            distance = distance_options[i]
+            label = QLabel(distance + " distance:")
+            distances_layout.addWidget(label, i, 0)
+            line_edit = QLineEdit()
+            line_edit.setValidator(QDoubleValidator(0.0, float('inf'), 1000))
+            line_edits[i] = line_edit
+            distances_layout.addWidget(line_edit, i, 1)
+
+        def get_parameters():
+
+            chains = {"Fixed":None, "Scanning": None}
+            for i in range(len(groups)):
+                group = groups[i]
+                model = group.checkedButton().model
+                key = list(chains.keys())[i]
+                chains[key] = model    
+
+            distances = dict(zip(distance_options, [None] * number_of_options))
+            for i in range(number_of_options):
+                key = list(distances.keys())[i]
+                value = line_edits[i]
+                distances[key] = value
+
+            self.create_disvis_input(chains, distances, pseudobonds)
+
+        ok_cancel = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)        
+        ok_cancel.accepted.connect(get_parameters)
+        ok_cancel.rejected.connect(self.disvis_dialog.close)  
+
+        outer_layout.addLayout(models_layout)
+        outer_layout.addLayout(distances_layout)
+        outer_layout.addWidget(ok_cancel)
+
+        self.disvis_dialog.setLayout(outer_layout)
+        self.disvis_dialog.show()
+
+
+    def create_disvis_input(self, chains, distances, pseudobonds):
+
+        import re
+
+        minimum = distances["Minimum"].text()
+        maximum = distances["Maximum"].text()
+        lines = []
+
+        def write_lines(atom1, atom2, sort=False):
+            atoms = [atom1, atom2]
+            lines = []
+            number_of_atoms = len(atoms)
+            atom_strings = [None] * number_of_atoms
+            replace_with_space = [":", "@"]
+            for i in range(number_of_atoms):
+                atom = atoms[i]
+                string = re.search("/.+", atom.string(style="command line")).group(0)
+                string = string.replace("/", "")                
+                for character in replace_with_space:
+                    string = string.replace(character, " ")
+                atom_strings[i] = string
+            if sort:
+                atom_strings.sort()
+            line = atom_strings[0] + " " + atom_strings[1] + " " + minimum + " " + maximum + "\n"
+            lines.append(line)
+
+            return lines
+
+        for pb in pseudobonds:
+            if len(pb.models) == 1:
+                if chains["Fixed"] != chains["Scanning"]:
+                    continue
+                chain = chains["Fixed"]
+                atom1, atom2 = pb.atoms
+                if (atom1 not in chain.atoms or atom2 not in chain.atoms):
+                    continue
+                lines = write_lines(atom1, atom2, sort=True)                
+
+            else:
+                if chains["Fixed"] == chains["Scanning"]:
+                    continue
+                atom1, atom2 = pb.atoms
+                atoms = [atom1, atom2]
+                for atom in atoms:
+                    atom.chain = object()
+                    for chain in chains:
+                        current_chain = chains[chain]
+                        if atom in current_chain.atoms:
+                            atom.chain = current_chain
+                if (atoms[0].chain == chains["Fixed"] and atoms[1].chain == chains["Scanning"]):
+                    lines = write_lines(atom1, atom2)
+                elif (atoms[0].chain == chains["Scanning"] and atoms[1].chain == chains["Fixed"]):
+                    lines = write_lines(atom2, atom1)
+
+        if len(lines) == 0:
+            return
+            
+        file_path = "C:/Users/ilsel/disvis.txt"
+        self.write_file(file_path, lines)
+        self.disvis_dialog.close()
                 
 
     def add_models(self, models):
