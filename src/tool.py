@@ -76,14 +76,14 @@ class CrosslinkMapper(ToolInstance):
         self.model_selector = QTreeWidget()
         self.model_selector.setHeaderLabels(["Name", "ID"])
         self.model_selector.setColumnWidth(0, 200)
-        self.model_selector.setMinimumHeight(minimum_tree_height)
+        # self.model_selector.setMinimumHeight(minimum_tree_height)
 
         # A treewidget that will contain PD evidence files that the user
         # has selected
         self.file_selector = QTreeWidget()
         self.file_selector.setHeaderLabels(["Name", "ID"])
         self.file_selector.setColumnWidth(0, 200)
-        self.file_selector.setMinimumHeight(minimum_tree_height)
+        # self.file_selector.setMinimumHeight(minimum_tree_height)
 
         file_button = QPushButton()
         file_button.setText("Click to select files")
@@ -113,7 +113,7 @@ class CrosslinkMapper(ToolInstance):
         self.pbonds_menu = QTreeWidget()
         self.pbonds_menu.setHeaderLabels(["Name", "Code (model IDs-file IDs)"])
         self.pbonds_menu.setColumnWidth(0, 300)
-        self.pbonds_menu.setMinimumHeight(minimum_tree_height)
+        # self.pbonds_menu.setMinimumHeight(minimum_tree_height)
         # When a pseudobond model is (de)selected in the menu, it should
         # also be (de)selected in the ChimeraX session. Call
         # "check_signal" method to arrange this        
@@ -588,9 +588,11 @@ class CrosslinkMapper(ToolInstance):
             print("Please select pseudobonds")
             return
 
-        from PyQt5.QtWidgets import (QGridLayout, QDialog, QTreeWidget, QTreeWidgetItem, QListWidget,
-            QListWidgetItem, QPushButton, QHBoxLayout, QCheckBox, QLabel)
+        from PyQt5.QtWidgets import (QGridLayout, QDialog, QTreeWidget, QTreeWidgetItem, QListWidget, 
+            QListWidgetItem, QLineEdit, QPushButton, QHBoxLayout, QCheckBox, QLabel)
         from PyQt5.QtCore import Qt
+        from qtrangeslider import QRangeSlider
+        from PyQt5.QtGui import QIntValidator
 
         layout = QGridLayout()
 
@@ -621,6 +623,24 @@ class CrosslinkMapper(ToolInstance):
             item = self.link_selector.findItems("Interlinks", Qt.MatchExactly)[0]
             item.setFlags(Qt.NoItemFlags)
         
+        slider_layout = QGridLayout()
+
+        self.slider = QRangeSlider(Qt.Horizontal)
+        # self.slider.valueChanged.connect(self.display_pseudobonds)
+        # self.slider.valueChanged.connect(self.adjust_slider_setters)
+
+        self.slider_setter_min = QLineEdit()
+        self.slider_setter_min.setAlignment(Qt.AlignRight)
+        self.slider_setter_min.setValidator(QIntValidator())
+        self.slider_setter_max = QLineEdit()
+        self.slider_setter_max.setAlignment(Qt.AlignLeft)
+        self.slider_setter_max.setValidator(QIntValidator())
+
+        slider_layout.addWidget(self.slider, 0, 1, 1, 2)
+        slider_layout.addWidget(self.slider_setter_min, 0, 0)
+        slider_layout.addWidget(self.slider_setter_max, 0, 3)
+        slider_layout.setColumnMinimumWidth(1, 300)
+        
         export_button = QPushButton("Export")
 
         self.checkbox_pb = QCheckBox(".pb")
@@ -638,8 +658,12 @@ class CrosslinkMapper(ToolInstance):
         layout.addWidget(self.dialog_model_selector, 1, 0)
         layout.addWidget(QLabel("Links:"), 0, 1)
         layout.addWidget(self.link_selector, 1, 1)
-        layout.addWidget(export_button, 2, 0)
-        layout.addLayout(checkbox_layout, 2, 1)
+        layout.addWidget(QLabel(""), 2, 0)
+        layout.addWidget(QLabel("Pseudobond distance:"), 3, 0)
+        layout.addLayout(slider_layout, 4, 0, 1, 2) 
+        layout.addWidget(QLabel(""), 5, 0)
+        layout.addLayout(checkbox_layout, 6, 0)       
+        layout.addWidget(export_button, 6, 1)
 
         self.subset_dialog.setLayout(layout)
         
@@ -996,7 +1020,8 @@ class CrosslinkMapper(ToolInstance):
         from chimerax.core.selection import SELECTION_CHANGED
         from chimerax.core.models import ADD_MODELS, REMOVE_MODELS
 
-        self.triggerset = self.session.triggers             
+        self.triggerset = self.session.triggers
+
         self.change_selection_handler = self.triggerset.add_handler(
             SELECTION_CHANGED,self.selection_handler
             )
