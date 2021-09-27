@@ -659,32 +659,37 @@ class CrosslinkMapper(ToolInstance):
             selected_pseudobonds)
         from chimerax.atomic.structure import Structure
 
-        pbs = []
+        selected_pbs = selected_pseudobonds(self.session)
+        pb_strings = set()
         models = set()
+        pbs = []
 
         for model in self.session.models:
             if (isinstance(model, PseudobondGroup) 
                     or not isinstance(model, Structure)):
                 continue
-            model_atoms = model.atoms
-            for pb in selected_pseudobonds(self.session):
+            for pb in selected_pbs:
                 if not pb.group.name.endswith(".pb"):
                     continue
-                pbs.append(pb)
-                for atom in pb.atoms:
-                    if not atom in model_atoms:
-                        continue
+                pb_strings.add(pb.string())
+                atom1, atom2 = pb.atoms
+                if (atom1 in model.atoms or atom2 in model.atoms):
+                    # Don't create a new set for every model
                     if not hasattr(pb, "models"):
                         pb.models = set()
                     pb.models.add(model)
                     models.add(model)
+
+        for pb in selected_pbs:
+            if pb.string() in pb_strings:
+                pbs.append(pb)
 
         return pbs, list(models)
 
 
     def export_subset(self, pseudobonds, checkboxes):
 
-        from PyQt5.QtWidgets import QFileDialog, QTreeWidgetItemIterator
+        from PyQt5.QtWidgets import QTreeWidgetItemIterator, QFileDialog
         from PyQt5.QtCore import Qt
 
         checked = True
@@ -741,18 +746,39 @@ class CrosslinkMapper(ToolInstance):
 
         if len(valid_pseudobonds) == 0:
             print("No pseudobonds match the criteria")
+
         else:
-            if checkboxes["Pb"].isChecked():
-                file_path, _ = QFileDialog.getSaveFileName(self.subset_dialog, "Save pseudobonds", "", "*.pb")
-                if file_path == "":
-                    return
-                self.write_file(file_path, pb_lines)
-                self.subset_dialog.close()
-            if checkboxes["DisVis"].isChecked():
-                self.show_disvis_dialog(models, valid_pseudobonds)
+            if (checkboxes["Pb"].isChecked() and not checkboxes["DisVis"].isChecked()):
+                self.save_subset("Save pseudobonds", "*.pb", [pb_lines])
+            elif (checkboxes["Pb"].isChecked() and checkboxes["DisVis"].isChecked()):
+                self.show_disvis_dialog(models, valid_pseudobonds, pb_lines)
+            elif (not checkboxes["Pb"].isChecked() and checkboxes["DisVis"].isChecked()):
+                self.show_disvis_dialog(models, valid_pseudobonds, None)
+            self.subset_dialog.close()
 
 
-    def show_disvis_dialog(self, models, pseudobonds):
+    def save_subset(self, title, extension, lists):
+
+        from PyQt5.QtWidgets import QFileDialog
+        import re
+
+        file_path, _ = QFileDialog.getSaveFileName(self.subset_dialog, title, "", extension)
+
+        if file_path == "":
+            return
+
+        file_path = re.search("[^.]+", file_path).group(0)
+        extensions = [".pb", ".txt"]
+
+        for i in range(len(lists)):
+            lst = lists[i]
+            if lst is None:
+                continue
+            current_path = file_path + extensions[i]
+            self.write_file(current_path, lst)
+
+
+    def show_disvis_dialog(self, models, pseudobonds, pb_lines=None):
 
         from PyQt5.QtWidgets import QDialog, QHBoxLayout, QVBoxLayout, QGridLayout, QLabel, QButtonGroup, QRadioButton, QLineEdit, QDialogButtonBox
         from PyQt5.QtGui import QDoubleValidator
@@ -799,20 +825,22 @@ class CrosslinkMapper(ToolInstance):
 
         def get_parameters():
 
-            chains = {"Fixed":None, "Scanning": None}
+            chains_keys = ["Fixed", "Scanning"]
+            chains = {}
             for i in range(len(groups)):
                 group = groups[i]
                 model = group.checkedButton().model
-                key = list(chains.keys())[i]
+                key = chains_keys[i]
                 chains[key] = model    
 
-            distances = dict(zip(distance_options, [None] * number_of_options))
+            distances_keys = distance_options
+            distances = {}
             for i in range(number_of_options):
-                key = list(distances.keys())[i]
+                key = distances_keys[i]
                 value = line_edits[i]
                 distances[key] = value
 
-            self.create_disvis_input(chains, distances, pseudobonds)
+            self.create_disvis_input(chains, distances, pseudobonds, pb_lines)
 
         ok_cancel = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)        
         ok_cancel.accepted.connect(get_parameters)
@@ -826,7 +854,7 @@ class CrosslinkMapper(ToolInstance):
         self.disvis_dialog.show()
 
 
-    def create_disvis_input(self, chains, distances, pseudobonds):
+    def create_disvis_input(self, chains, distances, pseudobonds, pb_lines=None):
 
         import re
 
@@ -834,9 +862,8 @@ class CrosslinkMapper(ToolInstance):
         maximum = distances["Maximum"].text()
         lines = []
 
-        def write_lines(atom1, atom2, sort=False):
+        def write_line(atom1, atom2, sort=False):
             atoms = [atom1, atom2]
-            lines = []
             number_of_atoms = len(atoms)
             atom_strings = [None] * number_of_atoms
             replace_with_space = [":", "@"]
@@ -850,41 +877,48 @@ class CrosslinkMapper(ToolInstance):
             if sort:
                 atom_strings.sort()
             line = atom_strings[0] + " " + atom_strings[1] + " " + minimum + " " + maximum + "\n"
-            lines.append(line)
 
-            return lines
+            return line
 
-        for pb in pseudobonds:
-            if len(pb.models) == 1:
-                if chains["Fixed"] != chains["Scanning"]:
+        if chains["Fixed"] == chains["Scanning"]:
+            chain = chains["Fixed"]
+            for pb in pseudobonds:
+                if len(pb.models) != 1:
                     continue
-                chain = chains["Fixed"]
                 atom1, atom2 = pb.atoms
                 if (atom1 not in chain.atoms or atom2 not in chain.atoms):
                     continue
-                lines = write_lines(atom1, atom2, sort=True)                
-
-            else:
-                if chains["Fixed"] == chains["Scanning"]:
+                lines.append(write_line(atom1, atom2, sort=True))                
+        else:
+            for pb in pseudobonds:
+                if len(pb.models) == 1:
                     continue
                 atom1, atom2 = pb.atoms
                 atoms = [atom1, atom2]
-                for atom in atoms:
-                    atom.chain = object()
+                for i in range(len(atoms)):
+                    atoms[i].chain = object()
                     for chain in chains:
                         current_chain = chains[chain]
-                        if atom in current_chain.atoms:
-                            atom.chain = current_chain
+                        if atoms[i] in current_chain.atoms:
+                            atoms[i].chain = current_chain
                 if (atoms[0].chain == chains["Fixed"] and atoms[1].chain == chains["Scanning"]):
-                    lines = write_lines(atom1, atom2)
+                    lines.append(write_line(atom1, atom2))
                 elif (atoms[0].chain == chains["Scanning"] and atoms[1].chain == chains["Fixed"]):
-                    lines = write_lines(atom2, atom1)
+                    lines.append(write_line(atom2, atom1))
 
         if len(lines) == 0:
+            print("No pseudobonds match the criteria")
             return
-            
-        file_path = "C:/Users/ilsel/disvis.txt"
-        self.write_file(file_path, lines)
+        
+        if pb_lines is not None:
+            title = "Save pseudobonds and DisVis input"
+            extension = "*.pb *.txt"
+        else:
+            title = "Save DisVis input"
+            extension = "*.txt"
+
+        self.save_subset(title, extension, [pb_lines, lines])
+
         self.disvis_dialog.close()
                 
 
