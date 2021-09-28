@@ -710,7 +710,7 @@ class CrosslinkMapper(ToolInstance):
         layout.addWidget(QLabel("Pseudobond distance (Å):"), 3, 0)
         layout.addLayout(slider_layout, 4, 0, 1, 2) 
         layout.addWidget(QLabel(""), 5, 0)
-        layout.addWidget(QLabel("Overlap between:"), 6, 0)
+        layout.addWidget(QLabel("Present in at least:"), 6, 0)
         layout.addLayout(overlap_layout, 7, 0)
         layout.addWidget(QLabel(""), 8, 0)
         layout.addLayout(checkbox_layout, 9, 0)       
