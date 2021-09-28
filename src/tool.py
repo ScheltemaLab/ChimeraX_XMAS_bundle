@@ -123,12 +123,16 @@ class CrosslinkMapper(ToolInstance):
         pbonds_layout.addWidget(self.pbonds_menu)
 
         subset_button = QPushButton()
-        subset_button.setText("Export data subsets")
+        subset_button.setText("Export subsets")
+        plot_button = QPushButton()
+        plot_button.setText("Plot distances")
 
         buttons_layout.addWidget(subset_button)
+        buttons_layout.addWidget(plot_button)
         # Upon clicking the subset button, a dialog is opened where the 
         # user can select the parameters for the data subset required
         subset_button.clicked.connect(self.show_subset_dialog)
+        plot_button.clicked.connect(self.create_distance_plot)
 
         outer_layout.addLayout(top_layout)
         outer_layout.addLayout(pbonds_layout)
@@ -150,6 +154,32 @@ class CrosslinkMapper(ToolInstance):
         # Add models open in session to the window with the "add_models"
         # method 
         self.add_models(self.session.models)
+
+
+    def create_distance_plot(self):
+
+        import seaborn as sns
+        import matplotlib.pyplot as plt
+
+        pbs = self.get_pseudobonds()
+        pbs_dict = {}
+
+        for pb in pbs:
+            pb_model = pb.group.name.replace(".pb", "")
+            if not pb_model in pbs_dict.keys():
+                pbs_dict[pb_model] = []
+            pbs_dict[pb_model].append(pb.length)      
+
+        models = list(pbs_dict.keys())
+        distances = list(pbs_dict.values())       
+
+        sns.set(style="whitegrid")
+        ax = sns.boxenplot(data=distances, orient="h")
+        ax = sns.stripplot(data=distances, orient="h", size = 4, color = "gray")
+        plt.xlabel("Distance (Å)")
+        yticks = plt.yticks(plt.yticks()[0], models)
+        plt.tight_layout()
+        plt.show()
 
     
     def dialog(self):
@@ -589,7 +619,7 @@ class CrosslinkMapper(ToolInstance):
             return
 
         from PyQt5.QtWidgets import (QGridLayout, QDialog, QTreeWidget, QTreeWidgetItem, QListWidget, 
-            QListWidgetItem, QLineEdit, QPushButton, QHBoxLayout, QCheckBox, QLabel)
+            QListWidgetItem, QLineEdit, QPushButton, QHBoxLayout, QComboBox, QCheckBox, QLabel)
         from PyQt5.QtCore import Qt
         from qtrangeslider import QRangeSlider
         from PyQt5.QtGui import QIntValidator
@@ -626,20 +656,38 @@ class CrosslinkMapper(ToolInstance):
         slider_layout = QGridLayout()
 
         self.slider = QRangeSlider(Qt.Horizontal)
-        # self.slider.valueChanged.connect(self.display_pseudobonds)
-        # self.slider.valueChanged.connect(self.adjust_slider_setters)
+        maximum = self.max_pseudobond_distance()
+        self.slider.setRange(0, maximum)
+        self.slider.setValue((0, maximum))
+        self.slider.valueChanged.connect(self.display_pseudobonds)
+        self.slider.valueChanged.connect(self.adjust_slider_setters)
 
         self.slider_setter_min = QLineEdit()
         self.slider_setter_min.setAlignment(Qt.AlignRight)
         self.slider_setter_min.setValidator(QIntValidator())
+        self.slider_setter_min.setText("0")
         self.slider_setter_max = QLineEdit()
         self.slider_setter_max.setAlignment(Qt.AlignLeft)
         self.slider_setter_max.setValidator(QIntValidator())
+        self.slider_setter_max.setText(str(maximum))
+
+        self.slider_setter_min.textChanged.connect(self.change_slider_value)
+        self.slider_setter_max.textChanged.connect(lambda: self.change_slider_value(minimum = False))
 
         slider_layout.addWidget(self.slider, 0, 1, 1, 2)
         slider_layout.addWidget(self.slider_setter_min, 0, 0)
         slider_layout.addWidget(self.slider_setter_max, 0, 3)
         slider_layout.setColumnMinimumWidth(1, 300)
+
+        self.overlap_number = QComboBox()
+        number_of_groups = self.get_pseudobond_groups(pseudobonds)
+        overlap_list = [str(i) for i in range(1, number_of_groups + 1)]
+        self.overlap_number.addItems(overlap_list)
+        overlap_string = "out of %s pseudobond models" % str(number_of_groups)
+
+        overlap_layout = QHBoxLayout()
+        overlap_layout.addWidget(self.overlap_number)
+        overlap_layout.addWidget(QLabel(overlap_string))
         
         export_button = QPushButton("Export")
 
@@ -659,17 +707,86 @@ class CrosslinkMapper(ToolInstance):
         layout.addWidget(QLabel("Links:"), 0, 1)
         layout.addWidget(self.link_selector, 1, 1)
         layout.addWidget(QLabel(""), 2, 0)
-        layout.addWidget(QLabel("Pseudobond distance:"), 3, 0)
+        layout.addWidget(QLabel("Pseudobond distance (Å):"), 3, 0)
         layout.addLayout(slider_layout, 4, 0, 1, 2) 
         layout.addWidget(QLabel(""), 5, 0)
-        layout.addLayout(checkbox_layout, 6, 0)       
-        layout.addWidget(export_button, 6, 1)
+        layout.addWidget(QLabel("Overlap between:"), 6, 0)
+        layout.addLayout(overlap_layout, 7, 0)
+        layout.addWidget(QLabel(""), 8, 0)
+        layout.addLayout(checkbox_layout, 9, 0)       
+        layout.addWidget(export_button, 9, 1)
 
         self.subset_dialog.setLayout(layout)
         
         export_button.clicked.connect(lambda: self.export_subset(pseudobonds, checkboxes))
 
         self.subset_dialog.show()
+        self.subset_dialog.rejected.connect(lambda: self.display_all(pseudobonds))
+
+
+    def max_pseudobond_distance(self):
+
+        pbs = self.get_pseudobonds()
+        maximum = 0
+
+        for pb in pbs:
+            length = pb.length
+            if length > maximum:
+                maximum = length
+
+        maximum = int(maximum) + 1
+
+        return maximum
+
+
+    def change_slider_value(self, minimum=True):
+        if minimum:
+            self.slider.setValue((int(self.slider_setter_min.text()), self.slider.value()[1]))
+        else:
+            self.slider.setValue((self.slider.value()[0], int(self.slider_setter_max.text())))
+
+
+    def adjust_slider_setters(self):
+        self.slider_setter_min.setText(str(self.slider.value()[0]))
+        self.slider_setter_max.setText(str(self.slider.value()[1]))
+
+
+    def display_pseudobonds(self):
+        
+        pbs = self.get_pseudobonds()
+        slider_values = self.slider.value()
+        minimum = slider_values[0]
+        maximum = slider_values[1]
+        for pb in pbs:
+            length = pb.length
+            if (length < minimum or length > maximum):
+                pb.display = False
+            else:
+                pb.display = True
+
+
+    def get_pseudobonds(self):
+
+        from chimerax.atomic.pbgroup import selected_pseudobonds
+
+        all_selected_pbs = selected_pseudobonds(self.session)
+        target_pbs = []
+
+        for pb in all_selected_pbs:
+            if pb.group.name.endswith(".pb"):
+                target_pbs.append(pb)
+
+        return target_pbs
+
+
+    def get_pseudobond_groups(self, pseudobonds):
+
+        pb_groups = set()
+
+        for pb in pseudobonds:
+            pb_groups.add(pb.group)
+
+        return len(pb_groups)      
 
 
     def get_pseudobonds_models(self):
@@ -679,11 +796,10 @@ class CrosslinkMapper(ToolInstance):
         # a list, containing the IDs of all models that the selected
         # pseudobonds are connected to.
 
-        from chimerax.atomic.pbgroup import (PseudobondGroup,
-            selected_pseudobonds)
+        from chimerax.atomic.pbgroup import PseudobondGroup
         from chimerax.atomic.structure import Structure
 
-        selected_pbs = selected_pseudobonds(self.session)
+        target_pbs = self.get_pseudobonds()
         pb_strings = set()
         models = set()
         pbs = []
@@ -692,9 +808,7 @@ class CrosslinkMapper(ToolInstance):
             if (isinstance(model, PseudobondGroup) 
                     or not isinstance(model, Structure)):
                 continue
-            for pb in selected_pbs:
-                if not pb.group.name.endswith(".pb"):
-                    continue
+            for pb in target_pbs:
                 pb_strings.add(pb.string())
                 atom1, atom2 = pb.atoms
                 if (atom1 in model.atoms or atom2 in model.atoms):
@@ -704,7 +818,7 @@ class CrosslinkMapper(ToolInstance):
                     pb.models.add(model)
                     models.add(model)
 
-        for pb in selected_pbs:
+        for pb in target_pbs:
             if pb.string() in pb_strings:
                 pbs.append(pb)
 
@@ -739,12 +853,14 @@ class CrosslinkMapper(ToolInstance):
 
         models = []
         valid_pseudobonds = []
-        pb_lines = []
         
         while model_iterator.value():
             item = model_iterator.value()
             models.append(item.model)
             model_iterator += 1
+
+        minimum = int(self.slider_setter_min.text())
+        maximum = int(self.slider_setter_max.text())
 
         for pb in pseudobonds:
             in_models = True
@@ -754,31 +870,56 @@ class CrosslinkMapper(ToolInstance):
                     break
             if not in_models:
                 continue
+            length = pb.length
+            if (length < minimum or length > maximum):
+                continue
             if number_of_links == 1:
                 link = links[0]
                 number_of_models = len(pb.models)
                 if (link == "Intralinks" and number_of_models != 1):
                     continue
                 elif (link == "Interlinks" and number_of_models != 2):
-                    continue
-            atom1, atom2 = pb.atoms
-            atom1_string = atom1.string(style="command line", omit_structure=False)
-            atom2_string = atom2.string(style="command line", omit_structure=False)
-            atoms_sorted = sorted([atom1_string, atom2_string])
+                    continue            
             valid_pseudobonds.append(pb)
-            pb_lines.append(atoms_sorted[0] + " " + atoms_sorted[1] + "\n")
+
+        number_for_overlap = int(self.overlap_number.currentText())
+        pb_strings = [pb.string() for pb in valid_pseudobonds]
+        if number_for_overlap > 1:
+            remove = []
+            for pb in pb_strings:
+                if pb_strings.count(pb) >= number_for_overlap:
+                    continue
+                remove.append(pb)
+            for pb in valid_pseudobonds:
+                if pb.string() not in remove:
+                    continue
+                valid_pseudobonds.remove(pb)
 
         if len(valid_pseudobonds) == 0:
             print("No pseudobonds match the criteria")
 
         else:
             if (checkboxes["Pb"].isChecked() and not checkboxes["DisVis"].isChecked()):
+                pb_lines = []
+                for pb in valid_pseudobonds:
+                    atom1, atom2 = pb.atoms
+                    atom1_string = atom1.string(style="command line", omit_structure=False)
+                    atom2_string = atom2.string(style="command line", omit_structure=False)
+                    atoms_sorted = sorted([atom1_string, atom2_string])
+                    pb_lines.append(atoms_sorted[0] + " " + atoms_sorted[1] + "\n")
                 self.save_subset("Save pseudobonds", "*.pb", [pb_lines])
             elif (checkboxes["Pb"].isChecked() and checkboxes["DisVis"].isChecked()):
                 self.show_disvis_dialog(models, valid_pseudobonds, pb_lines)
             elif (not checkboxes["Pb"].isChecked() and checkboxes["DisVis"].isChecked()):
                 self.show_disvis_dialog(models, valid_pseudobonds, None)
             self.subset_dialog.close()
+            self.display_all(pseudobonds)
+
+
+    def display_all(self, pseudobonds):
+
+        for pb in pseudobonds:
+            pb.display = True
 
 
     def save_subset(self, title, extension, lists):
@@ -843,7 +984,7 @@ class CrosslinkMapper(ToolInstance):
             label = QLabel(distance + " distance:")
             distances_layout.addWidget(label, i, 0)
             line_edit = QLineEdit()
-            line_edit.setValidator(QDoubleValidator(0.0, float('inf'), 1000))
+            line_edit.setValidator(QDoubleValidator(0.0, float("inf"), 1000))
             line_edits[i] = line_edit
             distances_layout.addWidget(line_edit, i, 1)
 
