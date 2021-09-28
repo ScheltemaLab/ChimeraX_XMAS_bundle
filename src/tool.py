@@ -124,15 +124,20 @@ class CrosslinkMapper(ToolInstance):
 
         subset_button = QPushButton()
         subset_button.setText("Export subsets")
-        plot_button = QPushButton()
-        plot_button.setText("Plot distances")
+        distance_button = QPushButton()
+        distance_button.setText("Plot distances")
+        overlap_button = QPushButton()
+        overlap_button.setText("Plot overlap")
+        buttons = [subset_button, distance_button, overlap_button]
+        functions = [self.show_subset_dialog, self.create_distance_plot, self.create_venn]
 
-        buttons_layout.addWidget(subset_button)
-        buttons_layout.addWidget(plot_button)
         # Upon clicking the subset button, a dialog is opened where the 
         # user can select the parameters for the data subset required
-        subset_button.clicked.connect(self.show_subset_dialog)
-        plot_button.clicked.connect(self.create_distance_plot)
+        for i in range(len(buttons)):
+            button = buttons[i]
+            buttons_layout.addWidget(button)
+            function = functions[i]
+            button.clicked.connect(function)
 
         outer_layout.addLayout(top_layout)
         outer_layout.addLayout(pbonds_layout)
@@ -156,19 +161,39 @@ class CrosslinkMapper(ToolInstance):
         self.add_models(self.session.models)
 
 
+    def create_venn(self):
+
+        import matplotlib.pyplot as plt
+        
+        pbs_dict = self.get_pseudobonds_dict(distance=False)
+
+        number_of_groups = len(pbs_dict.keys())
+
+        if (number_of_groups > 2 and number_of_groups < 8):
+            from matplotlib_venn import venn3
+            function = venn3
+        elif number_of_groups == 2:
+            from matplotlib_venn import venn2
+            function = venn2
+        else:
+            return
+
+        sets = []
+
+        for pb_group in pbs_dict:
+            pbs = pbs_dict[pb_group]
+            sets.append(set(pbs))
+
+        function(sets, tuple(pbs_dict.keys()))
+        plt.show()
+
+
     def create_distance_plot(self):
 
         import seaborn as sns
         import matplotlib.pyplot as plt
 
-        pbs = self.get_pseudobonds()
-        pbs_dict = {}
-
-        for pb in pbs:
-            pb_model = pb.group.name.replace(".pb", "")
-            if not pb_model in pbs_dict.keys():
-                pbs_dict[pb_model] = []
-            pbs_dict[pb_model].append(pb.length)      
+        pbs_dict = self.get_pseudobonds_dict()   
 
         models = list(pbs_dict.keys())
         distances = list(pbs_dict.values())       
@@ -181,6 +206,23 @@ class CrosslinkMapper(ToolInstance):
         plt.tight_layout()
         plt.show()
 
+
+    def get_pseudobonds_dict(self, distance=True):
+
+        pbs = self.get_pseudobonds()
+        pbs_dict = {}
+
+        for pb in pbs:
+            pb_model = pb.group.name.replace(".pb", "")
+            if not pb_model in pbs_dict.keys():
+                pbs_dict[pb_model] = []
+            if distance:
+                value = pb.length
+            else:
+                value = pb.string()
+            pbs_dict[pb_model].append(value)
+
+        return pbs_dict
     
     def dialog(self):
 
