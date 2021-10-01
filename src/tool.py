@@ -209,18 +209,18 @@ class CrosslinkMapper(ToolInstance):
 
     def get_pseudobonds_dict(self, distance=True):
 
-        pbs = self.get_pseudobonds()
+        selected_pbs = self.get_pseudobonds()
+        by_group = selected_pbs.by_group
         pbs_dict = {}
 
-        for pb in pbs:
-            pb_model = pb.group.name.replace(".pb", "")
-            if not pb_model in pbs_dict.keys():
-                pbs_dict[pb_model] = []
+        for group in by_group:
+            key = group[0].name.replace(".pb", "")
+            pbs = group[1]
             if distance:
-                value = pb.length
+                value = [pb.length for pb in pbs]
             else:
-                value = pb.string()
-            pbs_dict[pb_model].append(value)
+                value = [pb.string() for pb in pbs]
+            pbs_dict[key] = value
 
         return pbs_dict
     
@@ -407,7 +407,8 @@ class CrosslinkMapper(ToolInstance):
             peptide_pairs = [None] * number_of_deduplicated
 
             for i in range(number_of_deduplicated):
-                peptide_pairs[i] = [
+                peptide_pairs[i] = PeptidePair(input_pairs_deduplicated[i])
+                [
                     Peptide(input_pairs_deduplicated[i][0]),
                     Peptide(input_pairs_deduplicated[i][1])
                     ]
@@ -462,7 +463,7 @@ class CrosslinkMapper(ToolInstance):
                     # Loop all peptide sequences over the chain to find
                     # perfect alignments
                     for peptide_pair in peptide_pairs:
-                        for peptide in peptide_pair:
+                        for peptide in peptide_pair.peptides:
                             peptide_sequence = peptide.sequence
                             peptide_length = len(peptide_sequence)
                             for start in range(
@@ -503,18 +504,19 @@ class CrosslinkMapper(ToolInstance):
             for peptide_pair in peptide_pairs:
             # First select the peptide pairs for which both peptides
             # have alignments
-                if (len(peptide_pair[0].alignments) > 0 
-                        and len(peptide_pair[1].alignments) > 0):
+                pair = peptide_pair.peptides
+                if (len(pair[0].alignments) > 0 
+                        and len(pair[1].alignments) > 0):
                     number_of_aligned_pairs += 1
                     pbonds_unfiltered = [
-                        [a, b] for a in peptide_pair[0].alignments 
-                        for b in peptide_pair[1].alignments
+                        [a, b] for a in pair[0].alignments 
+                        for b in pair[1].alignments
                         ]                     
                     # Then write peptide pairs in their appropriate
                     # lists. Each possible pseudobond is stored as a
                     # PrePseudobond object
                     for pbond in pbonds_unfiltered:
-                        pb = PrePseudobond(pbond[0], pbond[1])
+                        pb = PrePseudobond(pbond[0], pbond[1], peptide_pair)
                         if (not pb.is_overlapping and not pb.is_selflink):
                             pbonds.append(pb)
                         elif not pb.is_selflink:
@@ -1319,7 +1321,7 @@ class PrePseudobond:
     # named PrePseudobond
     
     
-    def __init__(self, alignment1, alignment2):
+    def __init__(self, alignment1, alignment2, peptide_pair):
 
         # The crosslink positions of the two alignments dictate
         # between which atoms the pseudobond is formed
@@ -1333,6 +1335,7 @@ class PrePseudobond:
         self.is_overlapping = self.find_overlap(alignment1, alignment2)
         # Check whether the pseudobond is a self-link
         self.is_selflink = self.find_selflinks()
+        self.peptide_pair = peptide_pair
 
     
     def create_pb_line(self):
