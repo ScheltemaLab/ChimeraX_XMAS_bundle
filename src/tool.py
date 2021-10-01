@@ -81,7 +81,7 @@ class CrosslinkMapper(ToolInstance):
         # A treewidget that will contain PD evidence files that the user
         # has selected
         self.file_selector = QTreeWidget()
-        self.file_selector.setHeaderLabels(["Name", "ID"])
+        self.file_selector.setHeaderLabels(["Name"])
         self.file_selector.setColumnWidth(0, 200)
         # self.file_selector.setMinimumHeight(minimum_tree_height)
 
@@ -111,7 +111,7 @@ class CrosslinkMapper(ToolInstance):
         # both models that are created with Crosslink Mapper, as well as
         # models that are opened independently of Crosslink Mapper.
         self.pbonds_menu = QTreeWidget()
-        self.pbonds_menu.setHeaderLabels(["Name", "Code (model IDs-file IDs)"])
+        self.pbonds_menu.setHeaderLabels(["Name", "Model IDs"])
         self.pbonds_menu.setColumnWidth(0, 300)
         # self.pbonds_menu.setMinimumHeight(minimum_tree_height)
         # When a pseudobond model is (de)selected in the menu, it should
@@ -167,7 +167,7 @@ class CrosslinkMapper(ToolInstance):
         
         pbs_dict = self.get_pseudobonds_dict(distance=False)
 
-        number_of_groups = len(pbs_dict.keys())
+        number_of_groups = len(pbs_dict)
 
         if (number_of_groups > 2 and number_of_groups < 8):
             from matplotlib_venn import venn3
@@ -260,9 +260,8 @@ class CrosslinkMapper(ToolInstance):
             item = QTreeWidgetItem(self.file_selector)
             item.setText(0, short_name)
             item.setCheckState(0, Qt.Checked)
-            item.setText(1, ID)
             i += 1
-            self.evidence_files[ID] = path_to_file
+            self.evidence_files[short_name] = path_to_file
             self.number_of_items += 1
 
 
@@ -320,7 +319,10 @@ class CrosslinkMapper(ToolInstance):
             checked_items = []
             while iterator.value():
                 item = iterator.value()
-                ID = item.text(1)
+                if selector_type == "model":
+                    ID = item.text(1)
+                elif selector_type == "file":
+                    ID = item.text(0)
                 iterator += 1
                 checked_items.append(ID)
             if selector_type == "model":
@@ -531,8 +533,7 @@ class CrosslinkMapper(ToolInstance):
                 model_ids = ",".join([
                     str(model_id) for model_id in checked_models
                     ])
-                file_id = checked_items[j]
-                pb_file_code = model_ids + "-" + file_id
+                pb_file_code = model_ids
                 pb_file_path = evidence_file.replace(".xlsx", "_%s.pb"
                     % pb_file_code)
                 pb_file_name = self.get_short_filename(pb_file_path)
@@ -925,17 +926,20 @@ class CrosslinkMapper(ToolInstance):
             valid_pseudobonds.append(pb)
 
         number_for_overlap = int(self.overlap_number.currentText())
-        pb_strings = [pb.string() for pb in valid_pseudobonds]
         if number_for_overlap > 1:
+            pb_strings = [pb.string() for pb in valid_pseudobonds]
+            print(str(len(pb_strings)))
             remove = []
-            for pb in pb_strings:
-                if pb_strings.count(pb) >= number_for_overlap:
+            for string in pb_strings:
+                if pb_strings.count(string) >= number_for_overlap:
                     continue
-                remove.append(pb)
-            for pb in valid_pseudobonds:
-                if pb.string() not in remove:
-                    continue
-                valid_pseudobonds.remove(pb)
+                remove.append(string)
+            for string in remove:
+                for pb in valid_pseudobonds:
+                    if pb.string() != string:
+                        continue
+                    valid_pseudobonds.remove(pb)
+                    break
 
         if len(valid_pseudobonds) == 0:
             print("No pseudobonds match the criteria")
