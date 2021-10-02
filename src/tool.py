@@ -208,13 +208,17 @@ class CrosslinkMapper(ToolInstance):
 
 
     def get_pseudobonds_dict(self, distance=True):
+        from chimerax.atomic.pbgroup import selected_pseudobonds
 
-        selected_pbs = self.get_pseudobonds()
+        selected_pbs = selected_pseudobonds(self.session)
         by_group = selected_pbs.by_group
         pbs_dict = {}
 
         for group in by_group:
-            key = group[0].name.replace(".pb", "")
+            name = group[0].name
+            if not name.endswith(".pb"):
+                continue
+            key = name.replace(".pb", "")
             pbs = group[1]
             if distance:
                 value = [pb.length for pb in pbs]
@@ -483,7 +487,7 @@ class CrosslinkMapper(ToolInstance):
                                     alignment = Alignment(
                                         start, end, first_residue_number, 
                                         crosslink_position, model_id,
-                                        chain.chain_id)
+                                        chain)
                                     peptide.alignments.append(alignment)                    
 
             # Continue with creating all valid pseudobonds for all
@@ -545,11 +549,9 @@ class CrosslinkMapper(ToolInstance):
                     self.created_models[pb_file_name] = pb_file_code
                 # Write the .pb file  
                 self.write_file(pb_file_path, pbonds)
-                # Open this .pb file in ChimeraX. It will be added to
-                # the pbonds menu via the "add_models" method that is
-                # called due to the "ADD_MODELS" trigger
-                from chimerax.core.commands import run
-                run(self.session, "open %s" % pb_file_path)
+                print("Pseudobonds opened from %s" % pb_file_path)
+                # Create a new pseudobonds model
+                self.create_pseudobonds_model(pbonds, pb_file_name)
                 # Show the code of this file in the pbonds menu
                 item = self.pbonds_menu.findItems(
                     pb_file_name, Qt.MatchExactly, column=0)[0]
@@ -602,8 +604,30 @@ class CrosslinkMapper(ToolInstance):
             elif (number_of_overlapping_nonself == 0
                     and number_of_overlapping_self > 0):
                 print("All of these pseudobonds were self-links, "
-                    "and stored in %s." % self_path)                    
+                    "and stored in %s." % self_path)     
 
+                   
+    def create_pseudobonds_model(self, pbonds, name):
+    
+        manager = self.session.pb_manager
+        group = manager.get_group(name)
+        group.color = [255, 255, 0, 255]
+        group.radius = 0.5
+        
+        length = len(pbonds)
+        atom_list = [None] * length    
+        for i in range(length):
+            pb = pbonds[i]
+            atoms = sorted([pb.atom1, pb.atom2])
+            atom_list[i] = atoms
+            
+        atom_list_deduplicated = list(self.deduplicate(atom_list))
+            
+        for atoms in atom_list_deduplicated:
+            group.new_pseudobond(atoms[0], atoms[1])
+            
+        self.session.models.add([group])   
+        
 
     def deduplicate(self, lst):
 
@@ -1277,6 +1301,12 @@ class CrosslinkMapper(ToolInstance):
         self.triggerset.remove_handler(self.remove_model_handler)
 
 
+class PeptidePair:
+    
+    def __init__(self, peptide_pair):
+        self.peptides = [Peptide(peptide_pair[0]), Peptide(peptide_pair[1])]
+
+
 class Peptide:
 
     
@@ -1302,7 +1332,7 @@ class Alignment:
 
     def __init__(
         self, start, end, first_residue_number, crosslink_position, model_id,
-        chain_id):
+        chain):
 
         # Start and end position indicate the range of positions in the
         # sequence that is spanned by the peptide        
@@ -1310,9 +1340,14 @@ class Alignment:
         self.end_position = end + first_residue_number
         # Position of the crosslinked residue in the sequence        
         self.crosslink_position = crosslink_position + first_residue_number
+        residue = chain.residues[crosslink_position]
+        atoms = residue.atoms
+        for atom in atoms:
+            if atom.name == "CA":
+                self.atom = atom
         # String indicating on which model and chain the alignment was
         # found
-        self.id_string = "#" + model_id + "/" + chain_id
+        self.id_string = "#" + model_id + "/" + chain.chain_id
 
 
 class PrePseudobond:
@@ -1329,6 +1364,8 @@ class PrePseudobond:
         self.pos2 = alignment2.crosslink_position
         self.id1 = alignment1.id_string
         self.id2 = alignment2.id_string
+        self.atom1 = alignment1.atom
+        self.atom2 = alignment2.atom
         # A string is created that will be one line in a .pb file
         self.line = self.create_pb_line()
         # Check for overlap between the two alignments
