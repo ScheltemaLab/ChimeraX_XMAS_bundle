@@ -54,6 +54,8 @@ class CrosslinkMapper(ToolInstance):
         # upon closing the main tool window
         self.tool_window.cleanup = self.cleanup
 
+        self.pb_manager = self.session.pb_manager
+
 
     def _build_ui(self):
 
@@ -124,12 +126,14 @@ class CrosslinkMapper(ToolInstance):
 
         subset_button = QPushButton()
         subset_button.setText("Export subsets")
+        shortest_button = QPushButton()
+        shortest_button.setText("Find shortest")
         distance_button = QPushButton()
         distance_button.setText("Plot distances")
         overlap_button = QPushButton()
         overlap_button.setText("Plot overlap")
-        buttons = [subset_button, distance_button, overlap_button]
-        functions = [self.show_subset_dialog, self.create_distance_plot, self.create_venn]
+        buttons = [subset_button, shortest_button, distance_button, overlap_button]
+        functions = [self.show_subset_dialog, self.find_shortest, self.create_distance_plot, self.create_venn]
 
         # Upon clicking the subset button, a dialog is opened where the 
         # user can select the parameters for the data subset required
@@ -159,6 +163,61 @@ class CrosslinkMapper(ToolInstance):
         # Add models open in session to the window with the "add_models"
         # method 
         self.add_models(self.session.models)
+
+
+    def find_shortest(self):
+
+        from PyQt5.QtWidgets import QTreeWidgetItemIterator
+        from PyQt5.QtCore import Qt
+
+        iterator = QTreeWidgetItemIterator(
+            self.pbonds_menu, QTreeWidgetItemIterator.Checked)
+
+        if not iterator.value():
+            print("Please select pseudobonds")
+            return
+
+        models = self.session.models
+
+        while iterator.value():
+            item = iterator.value()
+            model = item.model
+            pbs = model.pseudobonds
+            pbs_dict = {}
+            name = model.name.replace(".pb", "")
+            new_name = name + "_shortest.pb"
+
+            for pb in pbs:
+                peptide_pairs = pb.peptide_pairs
+                for pair in peptide_pairs:
+                    if not pair in pbs_dict:
+                        pbs_dict[pair] = []
+                    pbs_dict[pair].append(pb)
+            
+            group = self.pb_manager.get_group(new_name)
+            group.color = [255, 255, 0, 255]
+            group.radius = 0.5
+
+            for pair in pbs_dict:
+                minimum = float("inf")
+                pbs = pbs_dict[pair]              
+                for pb in pbs:
+                    length = pb.length
+                    if length < minimum:
+                        minimum = length 
+                for pb in pbs:
+                    if pb.length > minimum:
+                        continue
+                    atom1, atom2 = pb.atoms
+                    group.new_pseudobond(atom1, atom2)
+            
+            models.add([group])
+
+            group_item = self.pbonds_menu.findItems(
+                    new_name, Qt.MatchExactly, column=0)[0]
+            group_item.setText(1, item.text(1))
+
+            iterator += 1
 
 
     def create_venn(self):
@@ -608,23 +667,26 @@ class CrosslinkMapper(ToolInstance):
 
                    
     def create_pseudobonds_model(self, pbonds, name):
-    
-        manager = self.session.pb_manager
-        group = manager.get_group(name)
+
+        group = self.pb_manager.get_group(name)
         group.color = [255, 255, 0, 255]
         group.radius = 0.5
         
         length = len(pbonds)
-        atom_list = [None] * length    
+        atom_dict = {}    
         for i in range(length):
             pb = pbonds[i]
             atoms = sorted([pb.atom1, pb.atom2])
-            atom_list[i] = atoms
+            atoms = tuple(atoms)
+            if atoms not in atom_dict.keys():
+                atom_dict[atoms] = []
+            atom_dict[atoms].append(pb.peptide_pair)
+
+        atom_list = list(atom_dict.keys())
             
-        atom_list_deduplicated = list(self.deduplicate(atom_list))
-            
-        for atoms in atom_list_deduplicated:
-            group.new_pseudobond(atoms[0], atoms[1])
+        for atoms in atom_list:
+            new_pb = group.new_pseudobond(atoms[0], atoms[1])
+            new_pb.peptide_pairs = atom_dict[atoms]
 
         if name not in self.created_models.keys():
             self.session.models.add([group])   
@@ -955,7 +1017,6 @@ class CrosslinkMapper(ToolInstance):
         number_for_overlap = int(self.overlap_number.currentText())
         if number_for_overlap > 1:
             pb_strings = [pb.string() for pb in valid_pseudobonds]
-            print(str(len(pb_strings)))
             remove = []
             for string in pb_strings:
                 if pb_strings.count(string) >= number_for_overlap:
