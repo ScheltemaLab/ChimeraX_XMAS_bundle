@@ -543,15 +543,15 @@ class CrosslinkMapper(ToolInstance):
                 pb_file_path = evidence_file.replace(".xlsx", "_%s.pb"
                     % pb_file_code)
                 pb_file_name = self.get_short_filename(pb_file_path)
-                # Store the model and its code in the "created_models"
-                # dictionary
-                if pb_file_name not in self.created_models.keys():
-                    self.created_models[pb_file_name] = pb_file_code
                 # Write the .pb file  
                 self.write_file(pb_file_path, pbonds)
                 print("Pseudobonds opened from %s" % pb_file_path)
                 # Create a new pseudobonds model
                 self.create_pseudobonds_model(pbonds, pb_file_name)
+                # Store the model and its code in the "created_models"
+                # dictionary
+                if pb_file_name not in self.created_models.keys():
+                    self.created_models[pb_file_name] = pb_file_code
                 # Show the code of this file in the pbonds menu
                 item = self.pbonds_menu.findItems(
                     pb_file_name, Qt.MatchExactly, column=0)[0]
@@ -625,8 +625,9 @@ class CrosslinkMapper(ToolInstance):
             
         for atoms in atom_list_deduplicated:
             group.new_pseudobond(atoms[0], atoms[1])
-            
-        self.session.models.add([group])   
+
+        if name not in self.created_models.keys():
+            self.session.models.add([group])   
         
 
     def deduplicate(self, lst):
