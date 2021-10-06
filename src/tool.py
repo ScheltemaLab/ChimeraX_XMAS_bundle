@@ -1043,6 +1043,13 @@ class XMAS(ToolInstance):
                     pb_lines.append(atoms_sorted[0] + " " + atoms_sorted[1] + "\n")
                 self.save_subset("Save pseudobonds", "*.pb", [pb_lines])
             elif (checkboxes["Pb"].isChecked() and checkboxes["DisVis"].isChecked()):
+                pb_lines = []
+                for pb in valid_pseudobonds:
+                    atom1, atom2 = pb.atoms
+                    atom1_string = atom1.string(style="command line", omit_structure=False)
+                    atom2_string = atom2.string(style="command line", omit_structure=False)
+                    atoms_sorted = sorted([atom1_string, atom2_string])
+                    pb_lines.append(atoms_sorted[0] + " " + atoms_sorted[1] + "\n")
                 self.show_disvis_dialog(models, valid_pseudobonds, pb_lines)
             elif (not checkboxes["Pb"].isChecked() and checkboxes["DisVis"].isChecked()):
                 self.show_disvis_dialog(models, valid_pseudobonds, None)
