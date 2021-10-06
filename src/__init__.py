@@ -27,7 +27,7 @@ class _MyAPI(BundleAPI):
         # appropriate class from the ``tool`` module.
         if ti.name == "XMAS":
             from . import tool
-            return tool.CrosslinkMapper(session, ti.name)
+            return tool.XMAS(session, ti.name)
         raise ValueError("trying to start unknown tool: %s" % ti.name)
 
     @staticmethod
