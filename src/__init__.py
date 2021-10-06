@@ -25,7 +25,7 @@ class _MyAPI(BundleAPI):
         # ones listed in bundle_info.xml (without the leading and
         # trailing whitespace), and create and return an instance of the
         # appropriate class from the ``tool`` module.
-        if ti.name == "Crosslink Mapper":
+        if ti.name == "XMAS":
             from . import tool
             return tool.CrosslinkMapper(session, ti.name)
         raise ValueError("trying to start unknown tool: %s" % ti.name)
@@ -33,9 +33,9 @@ class _MyAPI(BundleAPI):
     @staticmethod
     def get_class(class_name):
         # class_name will be a string
-        if class_name == "CrosslinkMapper":
+        if class_name == "XMAS":
             from . import tool
-            return tool.CrosslinkMapper
+            return tool.XMAS
         raise ValueError("Unknown class name '%s'" % class_name)
 
 # Create the ``bundle_api`` object that ChimeraX expects.
