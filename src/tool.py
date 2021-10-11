@@ -85,16 +85,23 @@ class XMAS(ToolInstance):
         self.file_selector = QTreeWidget()
         self.file_selector.setHeaderLabels(["Name"])
         self.file_selector.setColumnWidth(0, 200)
+        self.file_selector.setSelectionMode(QAbstractItemView.MultiSelection)
         # self.file_selector.setMinimumHeight(minimum_tree_height)
 
+        file_button_layout = QHBoxLayout()
         file_button = QPushButton()
-        file_button.setText("Click to select files")
+        file_button.setText("Import files")
+        remove_file_button = QPushButton()
+        remove_file_button.setText("Remove selected files")
+        file_button_layout.addWidget(file_button)
+        file_button_layout.addWidget(remove_file_button)
         # Upon clicking the file button, a file dialog is shown, where 
         # the user can select .xlsx files
-        file_button.clicked.connect(self.dialog)        
+        file_button.clicked.connect(self.dialog)
+        remove_file_button.clicked.connect(self.remove_files)        
 
         map_button = QPushButton()
-        map_button.setText("Click to map crosslinks")
+        map_button.setText("Map crosslinks")
         # Upon clicking the map button, the map_button_clicked method is
         # called twice, each time with different arguments
         map_button.clicked.connect(lambda: self.map_button_clicked(
@@ -106,7 +113,7 @@ class XMAS(ToolInstance):
         top_layout.addWidget(QLabel("Available files"), 0, 1)
         top_layout.addWidget(self.model_selector, 1, 0)
         top_layout.addWidget(self.file_selector, 1, 1)
-        top_layout.addWidget(file_button, 2, 1)
+        top_layout.addLayout(file_button_layout, 2, 1)
         top_layout.addWidget(map_button, 3, 1)
 
         # In this treewidget, pseudond models from .pb files are shown;
@@ -163,6 +170,29 @@ class XMAS(ToolInstance):
         # Add models open in session to the window with the "add_models"
         # method 
         self.add_models(self.session.models)
+
+
+    def remove_files(self):
+
+        from PyQt5.QtWidgets import QTreeWidgetItemIterator
+
+        iterator = QTreeWidgetItemIterator(self.file_selector, QTreeWidgetItemIterator.Selected)
+
+        if not iterator.value():
+            return
+
+        remove = []
+
+        while iterator.value():
+            item = iterator.value()
+            remove.append(item)
+            del self.evidence_files[item.text(0)]      
+            iterator += 1
+
+        root = self.file_selector.invisibleRootItem()      
+
+        for item in remove:
+            root.removeChild(item) 
 
 
     def find_shortest(self):
@@ -769,6 +799,7 @@ class XMAS(ToolInstance):
             item.setText(0, model.name)
             item.setText(1, model.id_string)
             item.setCheckState(0, Qt.Checked)
+            item.setFlags(item.flags() & ~Qt.ItemIsSelectable)
             item.model = model
 
         self.dialog_model_selector.sortItems(1, Qt.AscendingOrder)
@@ -781,6 +812,7 @@ class XMAS(ToolInstance):
             item = QListWidgetItem(self.link_selector)
             item.setText(link_type)
             item.setCheckState(Qt.Checked)
+            item.setFlags(item.flags() & ~Qt.ItemIsSelectable)
         if len(models) == 1:
             item = self.link_selector.findItems("Interlinks", Qt.MatchExactly)[0]
             item.setFlags(Qt.NoItemFlags)
@@ -1271,6 +1303,7 @@ class XMAS(ToolInstance):
             item.setText(0, model_name)
             item.setCheckState(0, checkstate)
             item.setText(1, column_1_text)
+            item.setFlags(item.flags() & ~Qt.ItemIsSelectable)
             item.model = model
 
 
