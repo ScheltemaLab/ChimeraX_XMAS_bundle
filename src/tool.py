@@ -12,7 +12,7 @@
 
 from chimerax.core.tools import ToolInstance
 
-class CrosslinkMapper(ToolInstance):
+class XMAS(ToolInstance):
     # Inheriting from ToolInstance makes us known to the ChimeraX tool 
     # manager, so we can be notified and take appropriate action when 
     # sessions are closed, saved, or restored, and we will be listed 
@@ -35,7 +35,7 @@ class CrosslinkMapper(ToolInstance):
 
         # Set name displayed on title bar (defaults to tool_name)
         # Must be after the superclass init, which would override it
-        self.display_name = "Crosslink Mapper"
+        self.display_name = "XMAS"
 
         # Create the main window for our tool. The window object will 
         # have a "ui_area" where we place the widgets composing our 
@@ -1043,6 +1043,13 @@ class CrosslinkMapper(ToolInstance):
                     pb_lines.append(atoms_sorted[0] + " " + atoms_sorted[1] + "\n")
                 self.save_subset("Save pseudobonds", "*.pb", [pb_lines])
             elif (checkboxes["Pb"].isChecked() and checkboxes["DisVis"].isChecked()):
+                pb_lines = []
+                for pb in valid_pseudobonds:
+                    atom1, atom2 = pb.atoms
+                    atom1_string = atom1.string(style="command line", omit_structure=False)
+                    atom2_string = atom2.string(style="command line", omit_structure=False)
+                    atoms_sorted = sorted([atom1_string, atom2_string])
+                    pb_lines.append(atoms_sorted[0] + " " + atoms_sorted[1] + "\n")
                 self.show_disvis_dialog(models, valid_pseudobonds, pb_lines)
             elif (not checkboxes["Pb"].isChecked() and checkboxes["DisVis"].isChecked()):
                 self.show_disvis_dialog(models, valid_pseudobonds, None)

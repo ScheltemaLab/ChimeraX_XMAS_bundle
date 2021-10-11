@@ -5,8 +5,8 @@ When uploaded to the ChimeraX toolshed, the bundle
 will be displayed without the ChimeraX- prefix.
 -->
 
-<BundleInfo name="ChimeraX-CrosslinkMapper"
-	    version="1.0.0" package="chimerax.crosslink_mapper"
+<BundleInfo name="ChimeraX-XMAS"
+	    version="1.0.0" package="chimerax.xmas"
   	    minSessionVersion="1" maxSessionVersion="1">
 
   <!-- Additional information about bundle source -->
@@ -48,7 +48,7 @@ will be displayed without the ChimeraX- prefix.
     <PythonClassifier>License :: Freeware</PythonClassifier>
     <!-- ChimeraX classifiers describe supplied functionality -->
     <!-- Register a graphical interface tool -->
-    <ChimeraXClassifier>ChimeraX :: Tool :: Crosslink Mapper ::
+    <ChimeraXClassifier>ChimeraX :: Tool :: XMAS ::
       Structure Analysis :: Align crosslinked peptides to structures</ChimeraXClassifier>
   </Classifiers>
 
