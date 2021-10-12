@@ -451,7 +451,7 @@ class XMAS(ToolInstance):
             # Display bold log message to signify which file is being
             # mapped
             self.session.logger.info(
-                "<b>Peptide pair mapping of PD output file: %s</b>" 
+                "<br><b>Peptide pair mapping of PD output file: %s</b>" 
                 % evidence_file, is_html=True)
             
             # Read the file and extract the peptide pairs from it
@@ -587,35 +587,49 @@ class XMAS(ToolInstance):
             # overlapping peptides. Overlapping peptides can be
             # categorized as nonself-links and selflinks
 
+            pbonds_unfiltered = []
             pbonds = []
             pbonds_overlapping = []
             pbonds_overlapping_selflinks = []
+            pbonds_overlap_associated = []
 
             # The number of perfectly aligned peptide pairs is counted
             number_of_aligned_pairs = 0
 
             for peptide_pair in peptide_pairs:
             # First select the peptide pairs for which both peptides
-            # have alignments
+            # have alignments. Each possible pseudobond is stored as a
+            # PrePseudobond object  
                 pair = peptide_pair.peptides
                 if (len(pair[0].alignments) > 0 
                         and len(pair[1].alignments) > 0):
-                    number_of_aligned_pairs += 1
+                    number_of_aligned_pairs += 1   
                     pbonds_unfiltered = [
-                        [a, b] for a in pair[0].alignments 
+                        PrePseudobond(a, b, peptide_pair) for a in pair[0].alignments 
                         for b in pair[1].alignments
-                        ]                     
-                    # Then write peptide pairs in their appropriate
-                    # lists. Each possible pseudobond is stored as a
-                    # PrePseudobond object
-                    for pbond in pbonds_unfiltered:
-                        pb = PrePseudobond(pbond[0], pbond[1], peptide_pair)
-                        if (not pb.is_overlapping and not pb.is_selflink):
-                            pbonds.append(pb)
-                        elif not pb.is_selflink:
-                            pbonds_overlapping.append(pb)
-                        elif pb.is_selflink:
-                            pbonds_overlapping_selflinks.append(pb)                              
+                        ]
+
+                if len(pbonds_unfiltered) == 0:
+                    continue      
+
+                # Check whether the peptide has pseudobonds for overlapping peptides
+                peptide_pair.has_overlapping = False       
+                for pb in pbonds_unfiltered:
+                    if pb.is_overlapping:
+                        peptide_pair.has_overlapping = True
+                        break
+             
+                # Then write pseudobonds in their appropriate
+                # lists.     
+                for pb in pbonds_unfiltered:
+                    if (not pb.is_overlapping and not pb.is_selflink):
+                        pbonds.append(pb)
+                        if peptide_pair.has_overlapping:
+                            pbonds_overlap_associated.append(pb)
+                    elif (pb.is_overlapping and not pb.is_selflink):
+                        pbonds_overlapping.append(pb)
+                    elif pb.is_selflink:
+                        pbonds_overlapping_selflinks.append(pb)   
             
             # Print a log message stating how many peptide pairs for
             # which perfect alignments have been found
@@ -646,54 +660,64 @@ class XMAS(ToolInstance):
                     pb_file_name, Qt.MatchExactly, column=0)[0]
                 item.setText(1, pb_file_code)
 
-            # Write .pb file for peptide pairs with overlapping
-            # peptides:       
-            number_of_overlapping_nonself = len(pbonds_overlapping)
-            number_of_overlapping_self = len(pbonds_overlapping_selflinks)            
-            number_of_overlapping = (number_of_overlapping_nonself
-                + number_of_overlapping_self)
+            # Write .pb files for peptide pairs with overlapping
+            # peptides:    
 
-            if number_of_overlapping > 0:
-                # Print a log message stating how many pseudobonds were
-                # not mapped due to overlapping peptides
-                if number_of_overlapping == 1:
-                    print("1 pseudobond was not mapped due to overlapping "
-                        "peptides.")
-                elif number_of_overlapping > 1:
-                    print("%s pseudobonds were not mapped due to overlapping"
-                        % number_of_overlapping, "peptides." )
+            # Self-links and non-self-links should be stored in
+            # separate files, since ChimeraX cannot open self-links
 
-                # Self-links and non-self-links should be stored in
-                # separate files, since ChimeraX cannot open self-links
+            no_overlapping_nonself = 0
+            no_overlapping_self = 0   
 
-                if number_of_overlapping_nonself > 0:
-                    nonself_path = pb_file_path.replace(
-                        ".pb", "_overlapping.pb")
-                    self.write_file(nonself_path, pbonds_overlapping)
-                
-                if number_of_overlapping_self > 0:
-                    self_path = pb_file_path.replace(
-                        ".pb", "_overlapping_selflinks.pb")
-                    self.write_file(self_path, pbonds_overlapping_selflinks)
+            if len(pbonds_overlapping) > 0:
+                nonself_path = pb_file_path.replace(
+                    ".pb", "_overlapping.pb")
+                no_overlapping_nonself = self.write_file(nonself_path, pbonds_overlapping)
+            if len(pbonds_overlapping_selflinks) > 0:
+                self_path = pb_file_path.replace(
+                    ".pb", "_overlapping_selflinks.pb")
+                no_overlapping_self = self.write_file(self_path, pbonds_overlapping_selflinks)
+            if len(pbonds_overlap_associated) > 0:
+                associated_path = pb_file_path.replace(
+                    ".pb", "_overlap_associated.pb")
+                no_overlap_associated = self.write_file(associated_path, pbonds_overlap_associated)
+                    
+            no_overlapping = (no_overlapping_nonself
+                + no_overlapping_self)
+
+            # Print a log message stating how many pseudobonds were
+            # not mapped due to overlapping peptides
+            if no_overlapping == 1:
+                print("1 pseudobond was not mapped due to overlapping "
+                    "peptides.")
+            elif no_overlapping > 1:
+                print("%s pseudobonds were not mapped due to overlapping"
+                    % no_overlapping, "peptides." )
 
             # Tell the user in which files the pseudobonds from
             # overlapping peptides can be found
-            if (number_of_overlapping_nonself > 0 
-                    and number_of_overlapping_self == 0):
+            if (len(pbonds_overlapping) > 0 
+                    and len(pbonds_overlapping_selflinks) == 0):
                 print("These pseudobonds were stored in %s."
                     % nonself_path)
-            elif (number_of_overlapping_nonself > 0 
-                    and number_of_overlapping_self > 0):
+            elif (len(pbonds_overlapping) > 0 
+                    and len(pbonds_overlapping_selflinks) > 0):
                 print("%s of these pseudobonds were self-links.\n"
-                    % number_of_overlapping_self
+                    % no_overlapping_self
                     + "Self-links were stored in %s.\n" 
                     % self_path
                     + "The remaining %s pseudobonds were stored in %s."
-                    % (number_of_overlapping_nonself, nonself_path))
-            elif (number_of_overlapping_nonself == 0
-                    and number_of_overlapping_self > 0):
+                    % (no_overlapping_nonself, nonself_path))
+            elif (len(pbonds_overlapping) == 0
+                    and len(pbonds_overlapping_selflinks) > 0):
                 print("All of these pseudobonds were self-links, "
-                    "and stored in %s." % self_path)     
+                    "and stored in %s." % self_path)
+
+            if len(pbonds_overlap_associated) > 0:
+                associated_path = pb_file_path.replace(
+                    ".pb", "_overlap_associated.pb")
+                self.write_file(associated_path, pbonds_overlap_associated)
+                print("%s pseudobonds from non-overlapping peptides belonged to a peptide pair that did yield overlapping peptides for one or more other pseudobonds. These overlap-associated pseudobonds were stored in %s." % (no_overlap_associated, associated_path))
 
                    
     def create_pseudobonds_model(self, pbonds, name):
@@ -751,6 +775,8 @@ class XMAS(ToolInstance):
         for line in lines_deduplicated:
             created_file.write(line)
         created_file.close()
+
+        return len(lines_deduplicated)
 
 
     def check_signal(self, item, column):
@@ -1467,14 +1493,14 @@ class PrePseudobond:
         self.id1 = alignment1.id_string
         self.id2 = alignment2.id_string
         self.atom1 = alignment1.atom
-        self.atom2 = alignment2.atom
+        self.atom2 = alignment2.atom        
+        self.peptide_pair = peptide_pair
         # A string is created that will be one line in a .pb file
         self.line = self.create_pb_line()
         # Check for overlap between the two alignments
         self.is_overlapping = self.find_overlap(alignment1, alignment2)
         # Check whether the pseudobond is a self-link
         self.is_selflink = self.find_selflinks()
-        self.peptide_pair = peptide_pair
 
     
     def create_pb_line(self):
