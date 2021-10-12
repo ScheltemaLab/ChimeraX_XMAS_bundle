@@ -722,9 +722,14 @@ class XMAS(ToolInstance):
                    
     def create_pseudobonds_model(self, pbonds, name):
 
+        from PyQt5.QtCore import Qt 
+
         group = self.pb_manager.get_group(name)
-        group.color = [255, 255, 0, 255]
-        group.radius = 0.5
+        if group.num_pseudobonds > 0:
+            group.clear()
+        else:
+            group.color = [255, 255, 0, 255]
+            group.radius = 0.5
         
         length = len(pbonds)
         atom_dict = {}    
@@ -742,7 +747,8 @@ class XMAS(ToolInstance):
             new_pb = group.new_pseudobond(atoms[0], atoms[1])
             new_pb.peptide_pairs = atom_dict[atoms]
 
-        if name not in self.created_models.keys():
+        find_item = len(self.pbonds_menu.findItems(name, Qt.MatchExactly, column=0))
+        if find_item == 0:
             self.session.models.add([group])   
         
 
