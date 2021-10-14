@@ -56,6 +56,10 @@ class XMAS(ToolInstance):
 
         self.pb_manager = self.session.pb_manager
 
+        from chimerax.core.colors import Colormap
+        cmap = Colormap(None, ((1, 0, 0, 1), (1, 1, 0, 1), (0, 2/3, 0, 1)))
+        self.cmap = cmap.linear_range(0, 200)
+
 
     def _build_ui(self):
 
@@ -459,6 +463,7 @@ class XMAS(ToolInstance):
             
             input_peptides_A = dataframe["Sequence A"].tolist()
             input_peptides_B = dataframe["Sequence B"].tolist()
+            xlinkx_scores = dataframe["Max. XlinkX Score"].tolist()
 
             input_pairs = []
             # Keep track of peptide pairs with lacking sequence
@@ -473,7 +478,7 @@ class XMAS(ToolInstance):
                 if (type(peptide_A) != str or type(peptide_B) != str):
                     sequence_info_lacking += 1
                     continue
-                input_pairs.append(sorted([peptide_A, peptide_B]))
+                input_pairs.append([sorted([peptide_A, peptide_B]), xlinkx_scores[i]])
                 
             # Print a message when one or multiple peptide pairs lack
             # sequence information
@@ -500,11 +505,10 @@ class XMAS(ToolInstance):
             peptide_pairs = [None] * number_of_deduplicated
 
             for i in range(number_of_deduplicated):
-                peptide_pairs[i] = PeptidePair(input_pairs_deduplicated[i])
-                [
-                    Peptide(input_pairs_deduplicated[i][0]),
-                    Peptide(input_pairs_deduplicated[i][1])
-                    ]
+                input_pair = input_pairs_deduplicated[i]
+                peptides = input_pair[0]
+                xlinkx_score = input_pair[1]
+                peptide_pairs[i] = PeptidePair(peptides, xlinkx_score)
 
             # Now we align all peptides to the sequences of all chains
             # open in the ChimeraX session
@@ -724,12 +728,14 @@ class XMAS(ToolInstance):
 
         from PyQt5.QtCore import Qt 
 
+        color_score_required = True
+
         group = self.pb_manager.get_group(name)
         if group.num_pseudobonds > 0:
             group.clear()
-        else:
+        if not color_score_required:
             group.color = [255, 255, 0, 255]
-            group.radius = 0.5
+        group.radius = 0.5
         
         length = len(pbonds)
         atom_dict = {}    
@@ -745,11 +751,30 @@ class XMAS(ToolInstance):
             
         for atoms in atom_list:
             new_pb = group.new_pseudobond(atoms[0], atoms[1])
-            new_pb.peptide_pairs = atom_dict[atoms]
+            peptide_pairs = new_pb.peptide_pairs = atom_dict[atoms]
+            if not color_score_required:
+                continue
+            color = self.get_color(peptide_pairs)
+            new_pb.color = color
 
         find_item = len(self.pbonds_menu.findItems(name, Qt.MatchExactly, column=0))
         if find_item == 0:
             self.session.models.add([group])   
+
+
+    def get_color(self, peptide_pairs):
+
+        max_score = 0
+
+        for peptide_pair in peptide_pairs:
+            score = peptide_pair.xlinkx_score
+            if score < max_score:
+                continue
+            max_score = score
+
+        rgba8 = self.cmap.interpolated_rgba8([max_score])
+
+        return rgba8[0]
         
 
     def deduplicate(self, lst):
@@ -1437,8 +1462,11 @@ class XMAS(ToolInstance):
 
 class PeptidePair:
     
-    def __init__(self, peptide_pair):
+    def __init__(self, peptide_pair, xlinkx_score):
         self.peptides = [Peptide(peptide_pair[0]), Peptide(peptide_pair[1])]
+        if xlinkx_score > 200:
+            self.xlinkx_score = 200
+        self.xlinkx_score = xlinkx_score
 
 
 class Peptide:
@@ -1501,6 +1529,7 @@ class PrePseudobond:
         self.atom1 = alignment1.atom
         self.atom2 = alignment2.atom        
         self.peptide_pair = peptide_pair
+        self.xlinkx_score = peptide_pair.xlinkx_score
         # A string is created that will be one line in a .pb file
         self.line = self.create_pb_line()
         # Check for overlap between the two alignments
