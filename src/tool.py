@@ -57,7 +57,7 @@ class XMAS(ToolInstance):
         self.pb_manager = self.session.pb_manager
 
         from chimerax.core.colors import Colormap
-        cmap = Colormap(None, ((1, 0, 0, 1), (1, 1, 0, 1), (0, 2/3, 0, 1)))
+        cmap = Colormap(None, ((1, 0, 0, 1), (1, 1, 0, 1), (0, 1, 0, 1)))
         self.cmap = cmap.linear_range(0, 200)
 
 
@@ -727,6 +727,7 @@ class XMAS(ToolInstance):
     def create_pseudobonds_model(self, pbonds, name):
 
         from PyQt5.QtCore import Qt 
+        from chimerax.color_key.model import get_model
 
         color_score_required = True
 
@@ -735,6 +736,12 @@ class XMAS(ToolInstance):
             group.clear()
         if not color_score_required:
             group.color = [255, 255, 0, 255]
+        else:
+            group.dashes = 0
+            m = get_model(self.session)
+            if (not hasattr(m, "delete_model") or m.delete_model):
+                m.delete()
+                m = ColorScore(self.session)
         group.radius = 0.5
         
         length = len(pbonds)
@@ -1570,3 +1577,25 @@ class PrePseudobond:
             is_selflink = True
 
         return is_selflink
+
+
+from chimerax.color_key.model import ColorKeyModel
+    
+class ColorScore(ColorKeyModel):
+
+
+    def __init__(self, session):
+
+	    super().__init__(session)
+	    self._rgbas_and_labels = [((1,0,0,1), "0"), ((1,0.5,0,1), " "), ((1,1,0,1), "100"), ((0.5,1,0,1), " "), ((0,1,0,1), "200")]
+		self._ticks = True
+		self._tick_thickness = 2
+		self._label_offset = -15
+        self.delete_model = False
+        self.key_changed_handler = self.triggers.add_handler("key changed", self.key_changed)
+
+
+    def key_changed(self, trigger, trigger_data):
+        
+        self.delete_model = True
+        
