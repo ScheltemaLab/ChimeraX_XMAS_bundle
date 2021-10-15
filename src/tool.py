@@ -67,11 +67,12 @@ class XMAS(ToolInstance):
  
         from PyQt5.QtWidgets import (
             QVBoxLayout, QGridLayout, QHBoxLayout, QTreeWidget, 
-            QAbstractItemView, QPushButton, QLabel
+            QAbstractItemView, QPushButton, QLabel, QCheckBox, QComboBox, QRadioButton, QButtonGroup, QLineEdit
             )
         
         outer_layout = QVBoxLayout()
         top_layout = QGridLayout()
+        map_layout = QVBoxLayout()
         pbonds_layout = QVBoxLayout()
         buttons_layout = QHBoxLayout()
 
@@ -82,7 +83,6 @@ class XMAS(ToolInstance):
         self.model_selector = QTreeWidget()
         self.model_selector.setHeaderLabels(["Name", "ID"])
         self.model_selector.setColumnWidth(0, 200)
-        # self.model_selector.setMinimumHeight(minimum_tree_height)
 
         # A treewidget that will contain PD evidence files that the user
         # has selected
@@ -90,22 +90,46 @@ class XMAS(ToolInstance):
         self.file_selector.setHeaderLabels(["Name"])
         self.file_selector.setColumnWidth(0, 200)
         self.file_selector.setSelectionMode(QAbstractItemView.MultiSelection)
-        # self.file_selector.setMinimumHeight(minimum_tree_height)
 
-        file_button_layout = QHBoxLayout()
         file_button = QPushButton()
         file_button.setText("Import files")
         remove_file_button = QPushButton()
         remove_file_button.setText("Remove selected files")
-        file_button_layout.addWidget(file_button)
-        file_button_layout.addWidget(remove_file_button)
         # Upon clicking the file button, a file dialog is shown, where 
         # the user can select .xlsx files
         file_button.clicked.connect(self.dialog)
-        remove_file_button.clicked.connect(self.remove_files)        
+        remove_file_button.clicked.connect(self.remove_files)    
 
+        map_combobox = QComboBox()
+        map_combobox.addItems(["", "score", "distance"])
+        map_cutoff = QRadioButton("Cutoff")
+        map_cutoff.toggle()
+        map_gradient = QRadioButton("Gradient")
+        group = QButtonGroup()
+        group.addButton(map_cutoff)
+        group.addButton(map_gradient)
+        cutoff_values = {"Min":None, "Max":None}
         map_button = QPushButton()
         map_button.setText("Map crosslinks")
+
+        map_layout.addWidget(QLabel("Mapping settings"))
+        sublayout1 = QHBoxLayout()
+        sublayout1.addWidget(QLabel("Color by:"))
+        sublayout1.addWidget(map_combobox)
+        map_layout.addLayout(sublayout1)
+        sublayout2 = QHBoxLayout()
+        sublayout2.addWidget(map_cutoff)
+        sublayout2.addWidget(map_gradient)
+        map_layout.addLayout(sublayout2)
+        sublayout3 = QGridLayout()
+        i = 0
+        for key in cutoff_values:
+            sublayout3.addWidget(QLabel(key + ":"), i, 0)
+            value = cutoff_values[key] = QLineEdit()
+            sublayout3.addWidget(value, i, 1)
+            i += 1
+        map_layout.addLayout(sublayout3)
+
         # Upon clicking the map button, the map_button_clicked method is
         # called twice, each time with different arguments
         map_button.clicked.connect(lambda: self.map_button_clicked(
@@ -114,11 +138,14 @@ class XMAS(ToolInstance):
             selector=self.file_selector, selector_type="file"))
         
         top_layout.addWidget(QLabel("Available models"), 0, 0)
-        top_layout.addWidget(QLabel("Available files"), 0, 1)
-        top_layout.addWidget(self.model_selector, 1, 0)
-        top_layout.addWidget(self.file_selector, 1, 1)
-        top_layout.addLayout(file_button_layout, 2, 1)
-        top_layout.addWidget(map_button, 3, 1)
+        top_layout.addWidget(QLabel("Available files"), 0, 2)
+        top_layout.addWidget(self.model_selector, 1, 0, 1, 2)
+        top_layout.addWidget(self.file_selector, 1, 2, 1, 2)
+        top_layout.addWidget(file_button, 2, 2)
+        top_layout.addWidget(remove_file_button, 2, 3)
+        top_layout.addLayout(map_layout, 3, 0, 5, 1)
+        top_layout.addWidget(map_button, 8, 3)
+        top_layout.setColumnMinimumWidth(1, 100)
 
         # In this treewidget, pseudond models from .pb files are shown;
         # both models that are created with Crosslink Mapper, as well as
@@ -734,15 +761,6 @@ class XMAS(ToolInstance):
         group = self.pb_manager.get_group(name)
         if group.num_pseudobonds > 0:
             group.clear()
-        if not color_score_required:
-            group.color = [255, 255, 0, 255]
-        else:
-            group.dashes = 0
-            m = get_model(self.session)
-            if (not hasattr(m, "delete_model") or m.delete_model):
-                m.delete()
-                m = ColorScore(self.session)
-        group.radius = 0.5
         
         length = len(pbonds)
         atom_dict = {}    
@@ -766,6 +784,16 @@ class XMAS(ToolInstance):
 
         find_item = len(self.pbonds_menu.findItems(name, Qt.MatchExactly, column=0))
         if find_item == 0:
+            if not color_score_required:
+                group.color = [255, 255, 0, 255]
+            else:
+                group.dashes = 0
+                m = get_model(self.session)
+                if (not hasattr(m, "delete_model") or m.delete_model):
+                    m.delete()
+                    m = ColorScore(self.session)
+                    self.session.models.add([m], root_model=True)
+            group.radius = 0.5
             self.session.models.add([group])   
 
 
@@ -1580,18 +1608,16 @@ class PrePseudobond:
 
 
 from chimerax.color_key.model import ColorKeyModel
-    
-class ColorScore(ColorKeyModel):
 
+class ColorScore(ColorKeyModel):
 
     def __init__(self, session):
 
-	    super().__init__(session)
-	    self._rgbas_and_labels = [((1,0,0,1), "0"), ((1,0.5,0,1), " "), ((1,1,0,1), "100"), ((0.5,1,0,1), " "), ((0,1,0,1), "200")]
-		self._ticks = True
-		self._tick_thickness = 2
-		self._label_offset = -15
-        self.delete_model = False
+        super().__init__(session)
+        self._rgbas_and_labels = [((1,0,0,1), "0"), ((1,0.5,0,1), " "), ((1,1,0,1), "100"), ((0.5,1,0,1), " "), ((0,1,0,1), "200")]
+        self._ticks = True
+        self._tick_thickness = 2
+        self._label_offset = -15
         self.key_changed_handler = self.triggers.add_handler("key changed", self.key_changed)
 
 
