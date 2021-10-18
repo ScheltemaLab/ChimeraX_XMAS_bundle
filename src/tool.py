@@ -69,14 +69,13 @@ class XMAS(ToolInstance):
             QVBoxLayout, QGridLayout, QHBoxLayout, QTreeWidget, 
             QAbstractItemView, QPushButton, QLabel, QCheckBox, QComboBox, QRadioButton, QButtonGroup, QLineEdit
             )
+        from PyQt5.QtGui import QDoubleValidator
         
         outer_layout = QVBoxLayout()
         top_layout = QGridLayout()
-        map_layout = QVBoxLayout()
+        map_layout = QGridLayout()
         pbonds_layout = QVBoxLayout()
         buttons_layout = QHBoxLayout()
-
-        minimum_tree_height = 120
         
         # A treewidget that will contain all structural protein models 
         # open in the session
@@ -100,35 +99,44 @@ class XMAS(ToolInstance):
         file_button.clicked.connect(self.dialog)
         remove_file_button.clicked.connect(self.remove_files)    
 
-        map_combobox = QComboBox()
-        map_combobox.addItems(["", "score", "distance"])
-        map_cutoff = QRadioButton("Cutoff")
-        map_cutoff.toggle()
-        map_gradient = QRadioButton("Gradient")
-        group = QButtonGroup()
-        group.addButton(map_cutoff)
-        group.addButton(map_gradient)
-        cutoff_values = {"Min":None, "Max":None}
+        self.map_combobox = QComboBox()
+        self.map_combobox.addItems(["uniform", "by score", "by distance"])
+        self.map_combobox.currentIndexChanged.connect(self.radio_buttons_policy)
+        radio_buttons_text = ["Gradient", "Cutoff"]
+        self.radio_buttons = QButtonGroup()
+        for i in range(len(radio_buttons_text)):
+            text = radio_buttons_text[i]
+            button = QRadioButton(text)
+            self.radio_buttons.addButton(button)
+            button.setEnabled(False)
+            map_layout.addWidget(button, 2, i)
+        radio_buttons = self.radio_buttons.buttons()
+        radio_buttons[0].setChecked(True)
+        radio_buttons[1].toggled.connect(self.cutoff_values_policy)
+        self.cutoff_values = {}
+        cutoff_labels = ["Min", "Max"]
         map_button = QPushButton()
         map_button.setText("Map crosslinks")
 
-        map_layout.addWidget(QLabel("Mapping settings"))
-        sublayout1 = QHBoxLayout()
-        sublayout1.addWidget(QLabel("Color by:"))
-        sublayout1.addWidget(map_combobox)
-        map_layout.addLayout(sublayout1)
-        sublayout2 = QHBoxLayout()
-        sublayout2.addWidget(map_cutoff)
-        sublayout2.addWidget(map_gradient)
-        map_layout.addLayout(sublayout2)
-        sublayout3 = QGridLayout()
-        i = 0
-        for key in cutoff_values:
-            sublayout3.addWidget(QLabel(key + ":"), i, 0)
-            value = cutoff_values[key] = QLineEdit()
-            sublayout3.addWidget(value, i, 1)
+        map_layout.addWidget(QLabel("Mapping settings"), 0, 0, 1, 2)
+        map_layout.addWidget(QLabel("Color policy:"), 1, 0)
+        map_layout.addWidget(self.map_combobox, 1, 1)
+        i = 2
+        for label in cutoff_labels:
+            qlabel = QLabel(label + ":")
+            line_edit = QLineEdit()
+            line_edit.setValidator(QDoubleValidator(0.0, float("inf"), 1000))
+            widgets = [qlabel, line_edit]
+            j = 2
+            for widget in widgets:
+                map_layout.addWidget(widget, i, j)
+                size_policy = widget.sizePolicy()
+                size_policy.setRetainSizeWhenHidden(True)
+                widget.setSizePolicy(size_policy)
+                widget.setVisible(False)
+                j += 1
+            self.cutoff_values[label] = widgets
             i += 1
-        map_layout.addLayout(sublayout3)
 
         # Upon clicking the map button, the map_button_clicked method is
         # called twice, each time with different arguments
@@ -143,17 +151,15 @@ class XMAS(ToolInstance):
         top_layout.addWidget(self.file_selector, 1, 2, 1, 2)
         top_layout.addWidget(file_button, 2, 2)
         top_layout.addWidget(remove_file_button, 2, 3)
-        top_layout.addLayout(map_layout, 3, 0, 5, 1)
-        top_layout.addWidget(map_button, 8, 3)
-        top_layout.setColumnMinimumWidth(1, 100)
+        top_layout.addLayout(map_layout, 3, 0, 4, 2)
+        top_layout.addWidget(map_button, 7, 3)
 
         # In this treewidget, pseudond models from .pb files are shown;
-        # both models that are created with Crosslink Mapper, as well as
-        # models that are opened independently of Crosslink Mapper.
+        # both models that are created with XMAS, as well as
+        # models that are opened independently of XMAS.
         self.pbonds_menu = QTreeWidget()
         self.pbonds_menu.setHeaderLabels(["Name", "Model IDs"])
         self.pbonds_menu.setColumnWidth(0, 300)
-        # self.pbonds_menu.setMinimumHeight(minimum_tree_height)
         # When a pseudobond model is (de)selected in the menu, it should
         # also be (de)selected in the ChimeraX session. Call
         # "check_signal" method to arrange this        
@@ -201,6 +207,45 @@ class XMAS(ToolInstance):
         # Add models open in session to the window with the "add_models"
         # method 
         self.add_models(self.session.models)
+
+    
+    def cutoff_values_policy(self, checked):
+
+        key = list(self.cutoff_values.keys())[0]
+        widget = self.cutoff_values[key][0]
+        visible = widget.isVisible()
+
+        if (visible and not checked):
+            set_visible = False
+        elif (not visible and checked):
+            set_visible = True
+        else:
+            return
+
+        for key in self.cutoff_values:
+            widgets = self.cutoff_values[key]
+            for widget in widgets:
+                widget.setVisible(set_visible)
+
+
+    def radio_buttons_policy(self, index):
+        
+        radio_buttons = self.radio_buttons.buttons()
+        radio_gradient = radio_buttons[0]
+        enabled = radio_gradient.isEnabled()
+
+        if (enabled and index == 0):
+            enable = False
+            self.cutoff_values_policy(False)
+        elif (not enabled and index != 0):
+            enable = True
+            if radio_buttons[1].isChecked():
+                self.cutoff_values_policy(True)
+        else:
+            return
+    
+        for button in radio_buttons:
+            button.setEnabled(enable) 
 
 
     def remove_files(self):
@@ -681,14 +726,14 @@ class XMAS(ToolInstance):
                 self.write_file(pb_file_path, pbonds)
                 print("Pseudobonds opened from %s" % pb_file_path)
                 # Create a new pseudobonds model
-                self.create_pseudobonds_model(pbonds, pb_file_name)
+                created_model = self.create_pseudobonds_model(pbonds, pb_file_name)
                 # Store the model and its code in the "created_models"
                 # dictionary
-                if pb_file_name not in self.created_models.keys():
-                    self.created_models[pb_file_name] = pb_file_code
-                # Show the code of this file in the pbonds menu
+                if created_model not in self.created_models.keys():
+                    self.created_models[created_model] = pb_file_code
+                # Show the code of this file in the pbonds menu                
                 item = self.pbonds_menu.findItems(
-                    pb_file_name, Qt.MatchExactly, column=0)[0]
+                    created_model, Qt.MatchExactly, column=0)[0]
                 item.setText(1, pb_file_code)
 
             # Write .pb files for peptide pairs with overlapping
@@ -756,11 +801,18 @@ class XMAS(ToolInstance):
         from PyQt5.QtCore import Qt 
         from chimerax.color_key.model import get_model
 
-        color_score_required = True
+        color_policy = self.map_combobox.currentText().replace("by ", "")
+        if color_policy != "uniform":
+            uniform = False
+            radio_button = self.radio_buttons.checkedButton().text()
+            name = name.replace(".pb", "_" + color_policy + "_" + radio_button.lower() + ".pb")
+        else:
+            uniform = True
 
         group = self.pb_manager.get_group(name)
         if group.num_pseudobonds > 0:
             group.clear()
+        self.session.models.add([group])   
         
         length = len(pbonds)
         atom_dict = {}    
@@ -777,24 +829,19 @@ class XMAS(ToolInstance):
         for atoms in atom_list:
             new_pb = group.new_pseudobond(atoms[0], atoms[1])
             peptide_pairs = new_pb.peptide_pairs = atom_dict[atoms]
-            if not color_score_required:
+            if uniform:
                 continue
             color = self.get_color(peptide_pairs)
             new_pb.color = color
 
-        find_item = len(self.pbonds_menu.findItems(name, Qt.MatchExactly, column=0))
-        if find_item == 0:
-            if not color_score_required:
-                group.color = [255, 255, 0, 255]
-            else:
-                group.dashes = 0
-                m = get_model(self.session)
-                if (not hasattr(m, "delete_model") or m.delete_model):
-                    m.delete()
-                    m = ColorScore(self.session)
-                    self.session.models.add([m], root_model=True)
-            group.radius = 0.5
-            self.session.models.add([group])   
+        if uniform:
+            group.color = [255, 255, 0, 255]
+        elif radio_button == "Gradient":
+            group.dashes = 0
+            m = ColorScore(self.session, color_policy, name)
+            self.session.models.add([m], root_model=True)
+
+        return name
 
 
     def get_color(self, peptide_pairs):
@@ -1378,14 +1425,14 @@ class XMAS(ToolInstance):
                 if not model.get_selected():
                     checkstate = Qt.Unchecked
                 # For models in the pbonds menu that have been created
-                # with Crosslink Mapper, show the model's code
-                # NB: if Crosslink Mapper is closed and reopened in the
+                # with XMAS, show the model's code
+                # NB: if XMAS is closed and reopened in the
                 # same session, we will start with a new, empty,
                 # dictionary   
                 if model_name in self.created_models.keys():
                     column_1_text = self.created_models[model_name]
                 # Models in the pbonds menu that have not been created
-                # with the current instance of Crosslink Mapper will
+                # with the current instance of XMAS will
                 # not get a code
                 else:
                     column_1_text = "N/A"
@@ -1411,7 +1458,7 @@ class XMAS(ToolInstance):
                 and not isinstance(model, PseudobondGroup)):
             model.structure_type = "Non-pb"
         # Models made from .pb files go in the pbonds_menu
-        elif model.name[-3:] == ".pb":
+        elif (isinstance(model, PseudobondGroup) and model.name[-3:] == ".pb"):
             model.structure_type = "Pb"          
 
 
@@ -1449,7 +1496,7 @@ class XMAS(ToolInstance):
 
         for model in self.session.models:
             # Skip all models that are not in the pbonds menu
-            if not model.name[-3:] == ".pb":
+            if (not model.name[-3:] == ".pb" or isinstance(model, ColorScore)):
                 continue
             item = model.item
             if model.selected:
@@ -1611,17 +1658,29 @@ from chimerax.color_key.model import ColorKeyModel
 
 class ColorScore(ColorKeyModel):
 
-    def __init__(self, session):
+    def __init__(self, session, color_policy, name):
 
         super().__init__(session)
-        self._rgbas_and_labels = [((1,0,0,1), "0"), ((1,0.5,0,1), " "), ((1,1,0,1), "100"), ((0.5,1,0,1), " "), ((0,1,0,1), "200")]
+        self._rgbas_and_labels = self.get_rgbas_and_labels(color_policy)
         self._ticks = True
         self._tick_thickness = 2
         self._label_offset = -15
-        self.key_changed_handler = self.triggers.add_handler("key changed", self.key_changed)
+        self.name = "Key " + name
 
 
-    def key_changed(self, trigger, trigger_data):
+    def get_rgbas_and_labels(self, color_policy):
         
-        self.delete_model = True
+        rgbas = [(1,0,0,1), (1,0.5,0,1), (1,1,0,1), (0.5,1,0,1), (0,1,0,1)]
+
+        if color_policy == "score":
+            labels = ["0", " ", "100", " ", "200"]
+        # elif color_policy == "distance":
+        #     labels = 
+
+        number_of_labels = len(labels)
+        _rgbas_and_labels = [None] * number_of_labels
+        for i in range(number_of_labels):
+            _rgbas_and_labels[i] = (rgbas[i], labels[i])
+
+        return _rgbas_and_labels
         
