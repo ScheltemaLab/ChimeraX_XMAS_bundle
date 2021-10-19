@@ -58,7 +58,7 @@ class XMAS(ToolInstance):
 
         from chimerax.core.colors import Colormap
         cmap = Colormap(None, ((1, 0, 0, 1), (1, 1, 0, 1), (0, 1, 0, 1)))
-        self.cmap = cmap.linear_range(0, 200)
+        self.score_cmap = cmap.linear_range(0, 200)
 
 
     def _build_ui(self):
@@ -304,6 +304,8 @@ class XMAS(ToolInstance):
             group.color = [255, 255, 0, 255]
             group.radius = 0.5
 
+            shortest_pbs = []
+
             for pair in pbs_dict:
                 minimum = float("inf")
                 pbs = pbs_dict[pair]              
@@ -314,8 +316,12 @@ class XMAS(ToolInstance):
                 for pb in pbs:
                     if pb.length > minimum:
                         continue
-                    atom1, atom2 = pb.atoms
-                    group.new_pseudobond(atom1, atom2)
+                    shortest_pbs.append(pb)
+
+            pbs_atoms_dict = self.pbs_atoms(shortest_pbs, find_shortest=True)
+            
+            for atoms in list(pbs_atoms_dict.keys()):
+                group.new_pseudobond(atoms[0], atoms[1])
             
             models.add([group])
 
@@ -726,7 +732,7 @@ class XMAS(ToolInstance):
                 self.write_file(pb_file_path, pbonds)
                 print("Pseudobonds opened from %s" % pb_file_path)
                 # Create a new pseudobonds model
-                created_model = self.create_pseudobonds_model(pbonds, pb_file_name)
+                created_model = self.create_pseudobonds_model(pbonds, pb_file_name, write_file=True)
                 # Store the model and its code in the "created_models"
                 # dictionary
                 if created_model not in self.created_models.keys():
@@ -796,7 +802,7 @@ class XMAS(ToolInstance):
                 print("%s pseudobonds from non-overlapping peptides belonged to a peptide pair that did yield overlapping peptides for one or more other pseudobonds. These overlap-associated pseudobonds were stored in %s." % (no_overlap_associated, associated_path))
 
                    
-    def create_pseudobonds_model(self, pbonds, name):
+    def create_pseudobonds_model(self, pbonds, name, write_file=False):
 
         from PyQt5.QtCore import Qt 
         from chimerax.color_key.model import get_model
@@ -808,55 +814,121 @@ class XMAS(ToolInstance):
             name = name.replace(".pb", "_" + color_policy + "_" + radio_button.lower() + ".pb")
         else:
             uniform = True
+            radio_button = None
 
         group = self.pb_manager.get_group(name)
         if group.num_pseudobonds > 0:
             group.clear()
-        self.session.models.add([group])   
-        
-        length = len(pbonds)
-        atom_dict = {}    
-        for i in range(length):
-            pb = pbonds[i]
-            atoms = sorted([pb.atom1, pb.atom2])
-            atoms = tuple(atoms)
-            if atoms not in atom_dict.keys():
-                atom_dict[atoms] = []
-            atom_dict[atoms].append(pb.peptide_pair)
+        self.session.models.add([group])
+        group.radius = 0.5
+        group.color = [255, 255, 0, 255]
 
-        atom_list = list(atom_dict.keys())
+        pbs_atoms_dict = self.pbs_atoms(pbonds)
             
-        for atoms in atom_list:
+        for atoms in list(pbs_atoms_dict.keys()):
             new_pb = group.new_pseudobond(atoms[0], atoms[1])
-            peptide_pairs = new_pb.peptide_pairs = atom_dict[atoms]
-            if uniform:
-                continue
-            color = self.get_color(peptide_pairs)
-            new_pb.color = color
+            new_pb.line = self.create_pb_line(new_pb)
+            if color_policy == "score":
+                peptide_pairs = new_pb.peptide_pairs = pbs_atoms_dict[atoms]
+                color = self.get_color(color_policy, peptide_pairs, radio_button, self.score_cmap)
+                new_pb.color = color
 
-        if uniform:
-            group.color = [255, 255, 0, 255]
-        elif radio_button == "Gradient":
+        if radio_button == "Gradient":
             group.dashes = 0
-            m = ColorScore(self.session, color_policy, name)
+            if color_policy == "distance":
+                pbs = group.pseudobonds
+                minimum, maximum = self.extreme_pseudobond_distances(pbs)
+                distances = [minimum, maximum]
+            else:
+                distances = None
+            m = ColorScore(self.session, distances, name)
             self.session.models.add([m], root_model=True)
+
+        if color_policy == "distance":
+            if radio_button == "Gradient":
+                cmap = m.cmap
+            else:
+                cmap = None
+            for pb in group.pseudobonds:
+                pb.color = self.get_color(color_policy, pb.length, radio_button, cmap)
+
+        if write_file:
+            if radio_button == "Gradient":
+                group = group
+            else:
+                group = None
+            self.write_file(file_path?, group.pseudobonds, group)
+
 
         return name
 
 
-    def get_color(self, peptide_pairs):
+    def create_pb_line(self, pb):
 
-        max_score = 0
+        atom1, atom2 = pb.atoms
+        atom1_string = atom1.string(style="command line", omit_structure=False)
+        atom2_string = atom2.string(style="command line", omit_structure=False)
+        atoms_sorted = sorted([atom1_string, atom2_string])
+        pb_line = atoms_sorted[0] + " " + atoms_sorted[1] + "\n"
 
-        for peptide_pair in peptide_pairs:
-            score = peptide_pair.xlinkx_score
-            if score < max_score:
+        return pb_line
+
+    
+    def pbs_atoms(self, pbs, find_shortest=False):
+        
+        length = len(pbs)
+        atom_dict = {}    
+        for i in range(length):
+            pb = pbs[i]
+            if not find_shortest:
+                atom1, atom2 = pb.atom1, pb.atom2
+            else:
+                atom1, atom2 = pb.atoms
+            atoms = sorted([atom1, atom2])
+            atoms = tuple(atoms)
+            if atoms not in atom_dict.keys():
+                atom_dict[atoms] = []
+            if find_shortest:
                 continue
-            max_score = score
+            atom_dict[atoms].append(pb.peptide_pair)
 
-        rgba8 = self.cmap.interpolated_rgba8([max_score])
+        return atom_dict
 
-        return rgba8[0]
+
+    def get_color(self, color_policy, data, radio_button, cmap):
+
+        if color_policy == "score":
+            value = 0
+            for peptide_pair in data:
+                score = peptide_pair.xlinkx_score
+                if score < value:
+                    continue
+                value = score
+
+        elif color_policy == "distance":
+            value = data        
+
+        if radio_button == "Gradient":
+            rgba8_list = cmap.interpolated_rgba8([value])
+            rgba8 = rgba8_list[0]
+        elif radio_button == "Cutoff":
+            minimum_value = self.cutoff_values["Min"][1].text()
+            if minimum_value == "":
+                minimum = 0
+            else:
+                minimum = float(minimum_value)
+            maximum_value = self.cutoff_values["Max"][1].text()
+            if maximum_value == "":
+                maximum = float("inf")
+            else:
+                maximum = float(maximum_value)
+            
+            if (value < minimum or value > maximum):
+                rgba8 = [255, 0, 0, 255]
+            else:
+                rgba8 = [255, 255, 0, 255]
+
+        return rgba8
         
 
     def deduplicate(self, lst):
@@ -872,7 +944,7 @@ class XMAS(ToolInstance):
             last = item
 
 
-    def write_file(self, file_path, pbonds):
+    def write_file(self, file_path, pbonds, group=None):
 
         # Write a file
 
@@ -959,7 +1031,8 @@ class XMAS(ToolInstance):
         slider_layout = QGridLayout()
 
         self.slider = QRangeSlider(Qt.Horizontal)
-        maximum = self.max_pseudobond_distance()
+        pbs = self.get_pseudobonds()
+        _, maximum = self.extreme_pseudobond_distances()
         self.slider.setRange(0, maximum)
         self.slider.setValue((0, maximum))
         self.slider.valueChanged.connect(self.display_pseudobonds)
@@ -1027,19 +1100,22 @@ class XMAS(ToolInstance):
         self.subset_dialog.rejected.connect(lambda: self.display_all(pseudobonds))
 
 
-    def max_pseudobond_distance(self):
+    def extreme_pseudobond_distances(self, pbs):
 
-        pbs = self.get_pseudobonds()
+        minimum = float("inf")
         maximum = 0
 
         for pb in pbs:
             length = pb.length
+            if length < minimum:
+                minimum = length
             if length > maximum:
                 maximum = length
 
+        minimum = int(minimum)
         maximum = int(maximum) + 1
 
-        return maximum
+        return minimum, maximum
 
 
     def change_slider_value(self, minimum=True):
@@ -1216,11 +1292,8 @@ class XMAS(ToolInstance):
             elif (checkboxes["Pb"].isChecked() and checkboxes["DisVis"].isChecked()):
                 pb_lines = []
                 for pb in valid_pseudobonds:
-                    atom1, atom2 = pb.atoms
-                    atom1_string = atom1.string(style="command line", omit_structure=False)
-                    atom2_string = atom2.string(style="command line", omit_structure=False)
-                    atoms_sorted = sorted([atom1_string, atom2_string])
-                    pb_lines.append(atoms_sorted[0] + " " + atoms_sorted[1] + "\n")
+                    pb_line = self.create_pb_line(pb)
+                    pb_lines.append(pb_line)
                 self.show_disvis_dialog(models, valid_pseudobonds, pb_lines)
             elif (not checkboxes["Pb"].isChecked() and checkboxes["DisVis"].isChecked()):
                 self.show_disvis_dialog(models, valid_pseudobonds, None)
@@ -1658,24 +1731,35 @@ from chimerax.color_key.model import ColorKeyModel
 
 class ColorScore(ColorKeyModel):
 
-    def __init__(self, session, color_policy, name):
+    def __init__(self, session, distances, name):
 
         super().__init__(session)
-        self._rgbas_and_labels = self.get_rgbas_and_labels(color_policy)
+        self._rgbas_and_labels = self.get_rgbas_and_labels(distances)
         self._ticks = True
         self._tick_thickness = 2
         self._label_offset = -15
         self.name = "Key " + name
 
 
-    def get_rgbas_and_labels(self, color_policy):
-        
-        rgbas = [(1,0,0,1), (1,0.5,0,1), (1,1,0,1), (0.5,1,0,1), (0,1,0,1)]
+    def get_rgbas_and_labels(self, distances):
 
-        if color_policy == "score":
+        from chimerax.core.colors import Colormap
+
+        if distances is None:
+            rgbas = [(1,0,0,1), (1,0.5,0,1), (1,1,0,1), (0.5,1,0,1), (0,1,0,1)]
             labels = ["0", " ", "100", " ", "200"]
-        # elif color_policy == "distance":
-        #     labels = 
+        else:
+            rgbas = [(1,1/3,1,1), (1,2/3,1,1), (1,1,1,1), (0.5,5/6,1,1), (0,2/3,1,1)]
+            minimum = distances[0]
+            maximum = distances[1]
+            sum_values = minimum + maximum
+            if not sum_values % 2 == 0:
+                maximum += 1
+            middle = int((minimum + maximum)/2)
+
+            labels = [str(minimum), " ", str(middle), " ", str(maximum)]
+            cmap = Colormap(None, ((1,1/3,1,1), (1,1,1,1), (0,2/3,1,1)))
+            self.cmap = cmap.linear_range(minimum, maximum)
 
         number_of_labels = len(labels)
         _rgbas_and_labels = [None] * number_of_labels
