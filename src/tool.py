@@ -857,7 +857,7 @@ class XMAS(ToolInstance):
                 group = group
             else:
                 group = None
-            self.write_file(file_path?, group.pseudobonds, group)
+            self.write_file(file_path?, group)
 
 
         return name
@@ -944,19 +944,56 @@ class XMAS(ToolInstance):
             last = item
 
 
-    def write_file(self, file_path, pbonds, group=None):
+    def write_file(self, file_path, group, file_type=".pb file", color_policy=False):
 
         # Write a file
 
-        number_of_pbonds = len(pbonds)
-        created_file = open(file_path, "w")
-        lines = [None] * number_of_pbonds
-        for i in range(number_of_pbonds):
-            try:
-                lines[i] = pbonds[i].line
-            except:
-                lines[i] = pbonds[i]
+        if file_type == ".pb file":
+            pbs = group.pseudobonds
+            radius = 0.5
+            dashes = 8
+            standard_color = " #ffff00"
+            all_standard = True
+        else:
+            pbs = group
+
+        number_of_pbs = len(pbs)
+        lines = [None] * number_of_pbs
+        if file_type == ".pb file"
+            for i in range(number_of_pbs):
+                pb = pbs[i]
+                atom1, atom2 = pb.atoms
+                atom1_string = atom1.string(style="command line", omit_structure=False)
+                atom2_string = atom2.string(style="command line", omit_structure=False)
+                atoms = sorted([atom1_string, atom2_string])
+                if color_policy:
+                    color = " #%02x%02x%02x%02x" % tuple(pb.color)
+                    if color != standard_color:
+                        all_standard = False
+                else:
+                    color = ""
+                lines[i] = "%s %s%s" % (atoms[0], atoms[1], color)
+            if all_standard:
+                for i in range(number_of_pbs):
+                    lines[i] = lines[i].replace(standard_color, "")           
+        else:
+            for i in range(number_of_pbs):
+                if file_type == ".pf file overlapping":
+                    lines[i] = pbs[i].line
+                else:
+                    lines[i] = pbs[i]
+
         lines_deduplicated = list(self.deduplicate(lines))
+
+        if file_type == ".pb file"
+            if group.radius != 0.5:
+                radius_line = "; radius = %s" % group.radius
+                lines_deduplicated.insert(0, radius_line)
+            if group.dashes != dashes:
+                dashes_line = "; dashes = %s" % group.dashes
+                lines_deduplicated.insert(0, dashes_line)
+
+        created_file = open(file_path, "w")
         for line in lines_deduplicated:
             created_file.write(line)
         created_file.close()
