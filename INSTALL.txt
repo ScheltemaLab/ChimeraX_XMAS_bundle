@@ -1,13 +1,12 @@
 - Store the 'bundle_info.xml' file and the 'src' folder in a folder of choice. The 'src' folder should contain:
-  - A 'docs' folder
   - An '__init__.py' file
   - A 'tool.py' file
 - In the ChimeraX application, run the command 'devel install “[path/to/folder_of_choice]”'
-- Pip install the required modules on the ChimeraX console, by running the following commands via your command prompt
+**- Pip install the required modules on the ChimeraX console, by running the following commands via your command prompt
   (for example, my [path/to/console] is 'C:\Program Files\ChimeraX 1.2.5\bin\ChimeraX-console.exe'):
   - '"[path/to/console]" -m pip install pandas --user'
   - '"[path/to/console]" -m pip install openpyxl --user'  
   - '"[path/to/console]" -m pip install qtrangeslider --user'
   - '"[path/to/console]" -m pip install seaborn --user'
-  - '"[path/to/console]" -m easy_install matplotlib-venn --user'
+  - '"[path/to/console]" -m easy_install matplotlib-venn --user'**
 - The bundle can be found in the ChimeraX application under 'Tools' - 'Structure Analysis' as 'XMAS'

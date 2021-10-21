@@ -35,6 +35,8 @@ will be displayed without the ChimeraX- prefix.
     <Dependency name="pandas"/>
     <Dependency name="openpyxl"/>
     <Dependency name="matplotlib_venn"/>
+    <Dependency name="seaborn"/>
+    <Dependency name="qtrangeslider"/>
   </Dependencies>
 
   <!-- Non-Python files that are part of package -->
