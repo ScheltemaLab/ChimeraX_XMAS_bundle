@@ -100,7 +100,7 @@ class XMAS(ToolInstance):
         remove_file_button.clicked.connect(self.remove_files)    
 
         self.map_combobox = QComboBox()
-        self.map_combobox.addItems(["uniform", "by score", "by distance"])
+        self.map_combobox.addItems(["uniform", "by distance", "by score"])
         self.map_combobox.currentIndexChanged.connect(self.radio_buttons_policy)
         radio_buttons_text = ["Gradient", "Cutoff"]
         self.radio_buttons = QButtonGroup()
@@ -727,12 +727,9 @@ class XMAS(ToolInstance):
                 pb_file_code = model_ids
                 pb_file_path = evidence_file.replace(".xlsx", "_%s.pb"
                     % pb_file_code)
-                pb_file_name = self.get_short_filename(pb_file_path)
-                # Write the .pb file  
-                self.write_file(pb_file_path, pbonds)
                 print("Pseudobonds opened from %s" % pb_file_path)
                 # Create a new pseudobonds model
-                created_model = self.create_pseudobonds_model(pbonds, pb_file_name, write_file=True)
+                created_model = self.create_pseudobonds_model(pbonds, pb_file_path)
                 # Store the model and its code in the "created_models"
                 # dictionary
                 if created_model not in self.created_models.keys():
@@ -754,15 +751,15 @@ class XMAS(ToolInstance):
             if len(pbonds_overlapping) > 0:
                 nonself_path = pb_file_path.replace(
                     ".pb", "_overlapping.pb")
-                no_overlapping_nonself = self.write_file(nonself_path, pbonds_overlapping)
+                no_overlapping_nonself = self.write_file(nonself_path, pbonds_overlapping, file_type=".pb overlapping")
             if len(pbonds_overlapping_selflinks) > 0:
                 self_path = pb_file_path.replace(
                     ".pb", "_overlapping_selflinks.pb")
-                no_overlapping_self = self.write_file(self_path, pbonds_overlapping_selflinks)
+                no_overlapping_self = self.write_file(self_path, pbonds_overlapping_selflinks, file_type=".pb overlapping")
             if len(pbonds_overlap_associated) > 0:
                 associated_path = pb_file_path.replace(
                     ".pb", "_overlap_associated.pb")
-                no_overlap_associated = self.write_file(associated_path, pbonds_overlap_associated)
+                no_overlap_associated = self.write_file(associated_path, pbonds_overlap_associated, file_type=".pb overlapping")
                     
             no_overlapping = (no_overlapping_nonself
                 + no_overlapping_self)
@@ -798,11 +795,11 @@ class XMAS(ToolInstance):
             if len(pbonds_overlap_associated) > 0:
                 associated_path = pb_file_path.replace(
                     ".pb", "_overlap_associated.pb")
-                self.write_file(associated_path, pbonds_overlap_associated)
+                self.write_file(associated_path, pbonds_overlap_associated, file_type=".pb overlapping")
                 print("%s pseudobonds from non-overlapping peptides belonged to a peptide pair that did yield overlapping peptides for one or more other pseudobonds. These overlap-associated pseudobonds were stored in %s." % (no_overlap_associated, associated_path))
 
                    
-    def create_pseudobonds_model(self, pbonds, name, write_file=False):
+    def create_pseudobonds_model(self, pbonds, file_path):
 
         from PyQt5.QtCore import Qt 
         from chimerax.color_key.model import get_model
@@ -811,26 +808,35 @@ class XMAS(ToolInstance):
         if color_policy != "uniform":
             uniform = False
             radio_button = self.radio_buttons.checkedButton().text()
-            name = name.replace(".pb", "_" + color_policy + "_" + radio_button.lower() + ".pb")
+            file_path = file_path.replace(".pb", "_" + color_policy + "_" + radio_button.lower() + ".pb")
         else:
             uniform = True
             radio_button = None
 
+        name = self.get_short_filename(file_path)
         group = self.pb_manager.get_group(name)
         if group.num_pseudobonds > 0:
             group.clear()
         self.session.models.add([group])
         group.radius = 0.5
         group.color = [255, 255, 0, 255]
+        group.dashes = 8
 
         pbs_atoms_dict = self.pbs_atoms(pbonds)
             
         for atoms in list(pbs_atoms_dict.keys()):
             new_pb = group.new_pseudobond(atoms[0], atoms[1])
             new_pb.line = self.create_pb_line(new_pb)
+            peptide_pairs = new_pb.peptide_pairs = pbs_atoms_dict[atoms]
+            max_score = 0
+            for peptide_pair in peptide_pairs:
+                score = peptide_pair.xlinkx_score
+                if score <= max_score:
+                    continue
+                max_score = score
+            new_pb.xlinkx_score = max_score
             if color_policy == "score":
-                peptide_pairs = new_pb.peptide_pairs = pbs_atoms_dict[atoms]
-                color = self.get_color(color_policy, peptide_pairs, radio_button, self.score_cmap)
+                color = self.get_color(color_policy, new_pb.xlinkx_score, radio_button, self.score_cmap)
                 new_pb.color = color
 
         if radio_button == "Gradient":
@@ -852,12 +858,11 @@ class XMAS(ToolInstance):
             for pb in group.pseudobonds:
                 pb.color = self.get_color(color_policy, pb.length, radio_button, cmap)
 
-        if write_file:
-            if radio_button == "Gradient":
-                group = group
-            else:
-                group = None
-            self.write_file(file_path?, group)
+        if uniform:
+            coloring = False
+        else:
+            coloring = True
+        self.write_file(file_path, group, file_type=".pb", coloring=coloring)
 
 
         return name
@@ -869,7 +874,7 @@ class XMAS(ToolInstance):
         atom1_string = atom1.string(style="command line", omit_structure=False)
         atom2_string = atom2.string(style="command line", omit_structure=False)
         atoms_sorted = sorted([atom1_string, atom2_string])
-        pb_line = atoms_sorted[0] + " " + atoms_sorted[1] + "\n"
+        pb_line = atoms_sorted[0] + " " + atoms_sorted[1]
 
         return pb_line
 
@@ -895,18 +900,10 @@ class XMAS(ToolInstance):
         return atom_dict
 
 
-    def get_color(self, color_policy, data, radio_button, cmap):
+    def get_color(self, color_policy, value, radio_button, cmap):
 
-        if color_policy == "score":
-            value = 0
-            for peptide_pair in data:
-                score = peptide_pair.xlinkx_score
-                if score < value:
-                    continue
-                value = score
-
-        elif color_policy == "distance":
-            value = data        
+        if (value > 200 and color_policy == "score" and radio_button == "Gradient"):
+                value = 200  
 
         if radio_button == "Gradient":
             rgba8_list = cmap.interpolated_rgba8([value])
@@ -944,11 +941,11 @@ class XMAS(ToolInstance):
             last = item
 
 
-    def write_file(self, file_path, group, file_type=".pb file", color_policy=False):
+    def write_file(self, file_path, group, file_type=".pb", coloring=False):
 
         # Write a file
 
-        if file_type == ".pb file":
+        if file_type == ".pb":
             pbs = group.pseudobonds
             radius = 0.5
             dashes = 8
@@ -959,33 +956,26 @@ class XMAS(ToolInstance):
 
         number_of_pbs = len(pbs)
         lines = [None] * number_of_pbs
-        if file_type == ".pb file"
+        if (file_type == ".pb" or file_type == ".pb overlapping"):
             for i in range(number_of_pbs):
                 pb = pbs[i]
-                atom1, atom2 = pb.atoms
-                atom1_string = atom1.string(style="command line", omit_structure=False)
-                atom2_string = atom2.string(style="command line", omit_structure=False)
-                atoms = sorted([atom1_string, atom2_string])
-                if color_policy:
+                if (coloring and not ".pb overlapping"):
                     color = " #%02x%02x%02x%02x" % tuple(pb.color)
                     if color != standard_color:
                         all_standard = False
                 else:
                     color = ""
-                lines[i] = "%s %s%s" % (atoms[0], atoms[1], color)
-            if all_standard:
+                lines[i] = "%s%s" % (pb.line, color)
+            if coloring and all_standard:
                 for i in range(number_of_pbs):
                     lines[i] = lines[i].replace(standard_color, "")           
-        else:
+        elif file_type == "export":
             for i in range(number_of_pbs):
-                if file_type == ".pf file overlapping":
-                    lines[i] = pbs[i].line
-                else:
-                    lines[i] = pbs[i]
+                lines[i] = pbs[i]
 
         lines_deduplicated = list(self.deduplicate(lines))
 
-        if file_type == ".pb file"
+        if file_type == ".pb":
             if group.radius != 0.5:
                 radius_line = "; radius = %s" % group.radius
                 lines_deduplicated.insert(0, radius_line)
@@ -995,7 +985,7 @@ class XMAS(ToolInstance):
 
         created_file = open(file_path, "w")
         for line in lines_deduplicated:
-            created_file.write(line)
+            created_file.write(line + "\n")
         created_file.close()
 
         return len(lines_deduplicated)
@@ -1029,10 +1019,8 @@ class XMAS(ToolInstance):
             return
 
         from PyQt5.QtWidgets import (QGridLayout, QDialog, QTreeWidget, QTreeWidgetItem, QListWidget, 
-            QListWidgetItem, QLineEdit, QPushButton, QHBoxLayout, QComboBox, QCheckBox, QLabel)
+            QListWidgetItem, QPushButton, QHBoxLayout, QComboBox, QCheckBox, QLabel)
         from PyQt5.QtCore import Qt
-        from qtrangeslider import QRangeSlider
-        from PyQt5.QtGui import QIntValidator
 
         layout = QGridLayout()
 
@@ -1065,32 +1053,18 @@ class XMAS(ToolInstance):
             item = self.link_selector.findItems("Interlinks", Qt.MatchExactly)[0]
             item.setFlags(Qt.NoItemFlags)
         
-        slider_layout = QGridLayout()
-
-        self.slider = QRangeSlider(Qt.Horizontal)
         pbs = self.get_pseudobonds()
-        _, maximum = self.extreme_pseudobond_distances()
-        self.slider.setRange(0, maximum)
-        self.slider.setValue((0, maximum))
-        self.slider.valueChanged.connect(self.display_pseudobonds)
-        self.slider.valueChanged.connect(self.adjust_slider_setters)
-
-        self.slider_setter_min = QLineEdit()
-        self.slider_setter_min.setAlignment(Qt.AlignRight)
-        self.slider_setter_min.setValidator(QIntValidator())
-        self.slider_setter_min.setText("0")
-        self.slider_setter_max = QLineEdit()
-        self.slider_setter_max.setAlignment(Qt.AlignLeft)
-        self.slider_setter_max.setValidator(QIntValidator())
-        self.slider_setter_max.setText(str(maximum))
-
-        self.slider_setter_min.textChanged.connect(self.change_slider_value)
-        self.slider_setter_max.textChanged.connect(lambda: self.change_slider_value(minimum = False))
-
-        slider_layout.addWidget(self.slider, 0, 1, 1, 2)
-        slider_layout.addWidget(self.slider_setter_min, 0, 0)
-        slider_layout.addWidget(self.slider_setter_max, 0, 3)
-        slider_layout.setColumnMinimumWidth(1, 300)
+        _, maximum_distance = self.extreme_pseudobond_distances(pbs)
+        self.distance_slider = Slider("distance", True, maximum_distance, pbs)
+        make_score_slider = True
+        for pb in pbs:
+            if not hasattr(pb, "xlinkx_score"):
+                make_score_slider = False
+                score_slider = Slider("score", False)
+                break
+        if make_score_slider:
+            maximum_score = self.get_maximum_score(pbs)
+            score_slider = Slider("score", True, maximum_score, pbs)
 
         self.overlap_number = QComboBox()
         number_of_groups = self.get_pseudobond_groups(pseudobonds)
@@ -1113,6 +1087,9 @@ class XMAS(ToolInstance):
         checkbox_layout = QHBoxLayout()
         for checkbox in checkboxes:
             current = checkboxes[checkbox]
+            # Until this can be implemented:
+            if current.text() == "HADDOCK":
+                break
             checkbox_layout.addWidget(current)
 
         layout.addWidget(QLabel("Models:"), 0, 0)
@@ -1120,14 +1097,14 @@ class XMAS(ToolInstance):
         layout.addWidget(QLabel("Links:"), 0, 1)
         layout.addWidget(self.link_selector, 1, 1)
         layout.addWidget(QLabel(""), 2, 0)
-        layout.addWidget(QLabel("Pseudobond distance (Å):"), 3, 0)
-        layout.addLayout(slider_layout, 4, 0, 1, 2) 
-        layout.addWidget(QLabel(""), 5, 0)
-        layout.addWidget(QLabel("Present in at least:"), 6, 0)
-        layout.addLayout(overlap_layout, 7, 0)
-        layout.addWidget(QLabel(""), 8, 0)
-        layout.addLayout(checkbox_layout, 9, 0)       
-        layout.addWidget(export_button, 9, 1)
+        layout.addLayout(self.distance_slider.layout, 3, 0, 2, 2)
+        layout.addLayout(score_slider.layout, 5, 0, 2, 2)
+        layout.addWidget(QLabel(""), 7, 0)
+        layout.addWidget(QLabel("Present in at least:"), 8, 0)
+        layout.addLayout(overlap_layout, 9, 0)
+        layout.addWidget(QLabel(""), 10, 0)
+        layout.addLayout(checkbox_layout, 11, 0)       
+        layout.addWidget(export_button, 11, 1)
 
         self.subset_dialog.setLayout(layout)
         
@@ -1135,6 +1112,18 @@ class XMAS(ToolInstance):
 
         self.subset_dialog.show()
         self.subset_dialog.rejected.connect(lambda: self.display_all(pseudobonds))
+
+    
+    def get_maximum_score(self, pbs):
+
+        maximum = 0
+
+        for pb in pbs:
+            if pb.xlinkx_score <= maximum:
+                continue
+            maximum = pb.xlinkx_score
+
+        return int(maximum) + 1
 
 
     def extreme_pseudobond_distances(self, pbs):
@@ -1153,32 +1142,6 @@ class XMAS(ToolInstance):
         maximum = int(maximum) + 1
 
         return minimum, maximum
-
-
-    def change_slider_value(self, minimum=True):
-        if minimum:
-            self.slider.setValue((int(self.slider_setter_min.text()), self.slider.value()[1]))
-        else:
-            self.slider.setValue((self.slider.value()[0], int(self.slider_setter_max.text())))
-
-
-    def adjust_slider_setters(self):
-        self.slider_setter_min.setText(str(self.slider.value()[0]))
-        self.slider_setter_max.setText(str(self.slider.value()[1]))
-
-
-    def display_pseudobonds(self):
-        
-        pbs = self.get_pseudobonds()
-        slider_values = self.slider.value()
-        minimum = slider_values[0]
-        maximum = slider_values[1]
-        for pb in pbs:
-            length = pb.length
-            if (length < minimum or length > maximum):
-                pb.display = False
-            else:
-                pb.display = True
 
 
     def get_pseudobonds(self):
@@ -1275,8 +1238,29 @@ class XMAS(ToolInstance):
             models.append(item.model)
             model_iterator += 1
 
-        minimum = int(self.slider_setter_min.text())
-        maximum = int(self.slider_setter_max.text())
+        minimum_distance = int(self.distance_slider.setter_min.text())
+        maximum_distance = int(self.distance_slider.setter_max.text())
+
+        def get_pass(pb):
+
+            minimum_score = int(self.score_slider.setter_min.text())
+            maximum_score = int(self.score_slider.setter_max.text())
+            score = pb.xlinkx_score
+
+            if (score < minimum_score or score > maximum_score):
+                return False
+
+            return True
+
+        def give_pass(pb):
+
+            return True
+
+
+        if self.score_slider.enabled:
+            function = get_pass
+        else:
+            function = give_pass
 
         for pb in pseudobonds:
             in_models = True
@@ -1287,7 +1271,10 @@ class XMAS(ToolInstance):
             if not in_models:
                 continue
             length = pb.length
-            if (length < minimum or length > maximum):
+            if (length < minimum_distance or length > maximum_distance):
+                continue
+            pass_pb = function(pb)
+            if not pass_pb:
                 continue
             if number_of_links == 1:
                 link = links[0]
@@ -1315,27 +1302,24 @@ class XMAS(ToolInstance):
 
         if len(valid_pseudobonds) == 0:
             print("No pseudobonds match the criteria")
+            return
 
-        else:
-            if (checkboxes["Pb"].isChecked() and not checkboxes["DisVis"].isChecked()):
-                pb_lines = []
-                for pb in valid_pseudobonds:
-                    atom1, atom2 = pb.atoms
-                    atom1_string = atom1.string(style="command line", omit_structure=False)
-                    atom2_string = atom2.string(style="command line", omit_structure=False)
-                    atoms_sorted = sorted([atom1_string, atom2_string])
-                    pb_lines.append(atoms_sorted[0] + " " + atoms_sorted[1] + "\n")
-                self.save_subset("Save pseudobonds", "*.pb", [pb_lines])
-            elif (checkboxes["Pb"].isChecked() and checkboxes["DisVis"].isChecked()):
-                pb_lines = []
-                for pb in valid_pseudobonds:
+        if checkboxes["Pb"].isChecked():
+            pb_lines = []
+            for pb in valid_pseudobonds:
+                if hasattr(pb, "line"):
+                    pb_line = pb.line
+                else:
                     pb_line = self.create_pb_line(pb)
-                    pb_lines.append(pb_line)
+                pb_lines.append(pb_line)
+            if not checkboxes["DisVis"].isChecked():
+                self.save_subset("Save pseudobonds", "*.pb", [pb_lines])
+                self.subset_dialog.close()
+            else:
                 self.show_disvis_dialog(models, valid_pseudobonds, pb_lines)
-            elif (not checkboxes["Pb"].isChecked() and checkboxes["DisVis"].isChecked()):
-                self.show_disvis_dialog(models, valid_pseudobonds, None)
-            self.subset_dialog.close()
-            self.display_all(pseudobonds)
+
+        elif (not checkboxes["Pb"].isChecked() and checkboxes["DisVis"].isChecked()):
+            self.show_disvis_dialog(models, valid_pseudobonds)
 
 
     def display_all(self, pseudobonds):
@@ -1362,7 +1346,7 @@ class XMAS(ToolInstance):
             if lst is None:
                 continue
             current_path = file_path + extensions[i]
-            self.write_file(current_path, lst)
+            self.write_file(current_path, lst, file_type="export")
 
 
     def show_disvis_dialog(self, models, pseudobonds, pb_lines=None):
@@ -1428,6 +1412,7 @@ class XMAS(ToolInstance):
                 distances[key] = value
 
             self.create_disvis_input(chains, distances, pseudobonds, pb_lines)
+            self.subset_dialog.close()
 
         ok_cancel = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)        
         ok_cancel.accepted.connect(get_parameters)
@@ -1463,7 +1448,7 @@ class XMAS(ToolInstance):
                 atom_strings[i] = string
             if sort:
                 atom_strings.sort()
-            line = atom_strings[0] + " " + atom_strings[1] + " " + minimum + " " + maximum + "\n"
+            line = atom_strings[0] + " " + atom_strings[1] + " " + minimum + " " + maximum
 
             return line
 
@@ -1656,8 +1641,6 @@ class PeptidePair:
     
     def __init__(self, peptide_pair, xlinkx_score):
         self.peptides = [Peptide(peptide_pair[0]), Peptide(peptide_pair[1])]
-        if xlinkx_score > 200:
-            self.xlinkx_score = 200
         self.xlinkx_score = xlinkx_score
 
 
@@ -1736,7 +1719,7 @@ class PrePseudobond:
             self.id1 + ":" + str(self.pos1) + "@CA",
             self.id2 + ":" + str(self.pos2) + "@CA"
             ])
-        pb_line = pb_sorted[0] + " " + pb_sorted[1] + "\n"
+        pb_line = pb_sorted[0] + " " + pb_sorted[1]
         
         return pb_line
 
@@ -1784,7 +1767,7 @@ class ColorScore(ColorKeyModel):
 
         if distances is None:
             rgbas = [(1,0,0,1), (1,0.5,0,1), (1,1,0,1), (0.5,1,0,1), (0,1,0,1)]
-            labels = ["0", " ", "100", " ", "200"]
+            labels = ["0", " ", "100", " ", "≥200"]
         else:
             rgbas = [(1,1/3,1,1), (1,2/3,1,1), (1,1,1,1), (0.5,5/6,1,1), (0,2/3,1,1)]
             minimum = distances[0]
@@ -1805,3 +1788,105 @@ class ColorScore(ColorKeyModel):
 
         return _rgbas_and_labels
         
+
+class Slider:
+    
+    def __init__(self, value_type="distance", enabled=True, maximum=None, pbs=None):
+        
+        from PyQt5.QtWidgets import QGridLayout, QLabel, QLineEdit
+        from qtrangeslider import QRangeSlider
+        from PyQt5.QtCore import Qt
+        from PyQt5.QtGui import QIntValidator
+        
+        self.enabled = enabled
+        self.layout = QGridLayout()
+        if value_type == "distance":
+            title = "Pseudobond distance (Å)"
+        elif value_type == "score":
+            title = "Max. XLinkX score"
+        label = QLabel(title + ":")
+        self.slider = QRangeSlider(Qt.Horizontal)
+        self.setter_min = QLineEdit()
+        self.setter_max = QLineEdit()
+        
+        self.layout.addWidget(label, 0, 0, 1, 4)
+        self.layout.addWidget(self.slider, 1, 1, 1, 2)
+        self.layout.addWidget(self.setter_min, 1, 0)
+        self.layout.addWidget(self.setter_max, 1, 3)
+        self.layout.setColumnMinimumWidth(1, 300)
+        
+        if not enabled:
+            for i in range(self.layout.count()):
+                widget = self.layout.itemAt(i).widget()
+                widget.setEnabled(False)
+            return
+        
+        self.slider.setRange(0, maximum)
+        self.slider.setValue((0, maximum))
+        self.slider.signal = self.slider.valueChanged
+        self.slider.signal.connect(lambda: self.display_pseudobonds(value_type, pbs))
+        self.slider.signal.connect(self.adjust_setters)
+        
+        self.setters = [self.setter_min, self.setter_max]
+        alignments = [Qt.AlignRight, Qt.AlignLeft]
+        texts = ["0", str(maximum)]
+        minimum = [True, False]
+        for i in range(len(self.setters)):
+            setter = self.setters[i]
+            setter.setAlignment(alignments[i])
+            setter.setValidator(QIntValidator())
+            setter.setText(texts[i])
+            setter.minimum = minimum[i]
+            setter.signal = setter.textChanged
+            setter.signal.connect(lambda: self.change_slider_value(minimum[i]))
+
+        
+    def display_pseudobonds(self, value_type, pbs):
+        
+        slider_values = self.slider.value()
+        minimum = slider_values[0]
+        maximum = slider_values[1]
+        
+        def get_distance(pb):
+            return pb.length
+        
+        def get_score(pb):
+            return pb.xlinkx_score
+        
+        if value_type == "distance":
+            function = get_distance
+        elif value_type == "score":
+            function = get_score
+            
+        for pb in pbs:
+            value = function(pb)
+            if (value < minimum or value > maximum):
+                pb.display = False
+            else:
+                pb.display = True
+
+                
+    def adjust_setters(self):
+        
+        values = self.slider.value()
+        
+        for i in range(len(values)):
+            setter = self.setters[i]
+            signal = setter.signal
+            minimum = setter.minimum
+            signal.disconnect(lambda: self.change_slider_value(minimum))
+            setter.setText(str(values[i]))
+            signal.textChanged.connect(lambda: self.change_slider_value(minimum))
+
+            
+    def change_slider_value(self, minimum):
+        
+        if minimum:
+            values = (int(self.setter_min.text()), self.slider.value()[1])
+        else:
+            values = (self.slider.value()[0], int(self.setter_max.text()))
+
+        signal = self.slider.signal
+        signal.disconnect(self.adjust_setters)   
+        self.slider.setValue(values)
+        signal.connect(self.adjust_setters)
