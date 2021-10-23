@@ -1823,9 +1823,9 @@ class Slider:
         
         self.slider.setRange(0, maximum)
         self.slider.setValue((0, maximum))
-        self.slider.signal = self.slider.valueChanged
-        self.slider.signal.connect(lambda: self.display_pseudobonds(value_type, pbs))
-        self.slider.signal.connect(self.adjust_setters)
+        signal = self.slider.valueChanged
+        signal.connect(lambda: self.display_pseudobonds(value_type, pbs))
+        signal.connect(self.adjust_setters)
         
         self.setters = [self.setter_min, self.setter_max]
         alignments = [Qt.AlignRight, Qt.AlignLeft]
@@ -1836,9 +1836,7 @@ class Slider:
             setter.setAlignment(alignments[i])
             setter.setValidator(QIntValidator())
             setter.setText(texts[i])
-            setter.minimum = minimum[i]
-            setter.signal = setter.textChanged
-            setter.signal.connect(lambda: self.change_slider_value(minimum[i]))
+            setter.textChanged.connect(lambda: self.change_slider_value(minimum[i]))
 
         
     def display_pseudobonds(self, value_type, pbs):
@@ -1872,21 +1870,16 @@ class Slider:
         
         for i in range(len(values)):
             setter = self.setters[i]
-            signal = setter.signal
-            minimum = setter.minimum
-            signal.disconnect(lambda: self.change_slider_value(minimum))
             setter.setText(str(values[i]))
-            signal.textChanged.connect(lambda: self.change_slider_value(minimum))
 
             
     def change_slider_value(self, minimum):
+
+        print(self.setter_min.text())
         
         if minimum:
             values = (int(self.setter_min.text()), self.slider.value()[1])
         else:
             values = (self.slider.value()[0], int(self.setter_max.text()))
-
-        signal = self.slider.signal
-        signal.disconnect(self.adjust_setters)   
+  
         self.slider.setValue(values)
-        signal.connect(self.adjust_setters)
