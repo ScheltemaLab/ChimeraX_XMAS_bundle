@@ -22,8 +22,6 @@ class XMAS(ToolInstance):
     SESSION_ENDURING = False  
     # We do save/restore in sessions  
     SESSION_SAVE = True         
-    # Let ChimeraX know about our help page
-    help = "help:user/tools/tutorial.html"
                                 
 
     def __init__(self, session, tool_name):
