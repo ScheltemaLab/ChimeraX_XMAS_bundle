@@ -33,7 +33,6 @@ will be displayed without the ChimeraX- prefix.
     <Dependency name="ChimeraX-UI" version="~=1.0"/>
     <Dependency name="pandas"/>
     <Dependency name="openpyxl"/>
-    <Dependency name="matplotlib_venn"/>
     <Dependency name="seaborn"/>
     <Dependency name="qtrangeslider"/>
   </Dependencies>
