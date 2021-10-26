@@ -226,6 +226,8 @@ class XMAS(ToolInstance):
             group.color = [255, 255, 0, 255]
             group.radius = 0.5
 
+            shortest_pbs = []
+
             for pair in pbs_dict:
                 minimum = float("inf")
                 pbs = pbs_dict[pair]              
@@ -236,8 +238,12 @@ class XMAS(ToolInstance):
                 for pb in pbs:
                     if pb.length > minimum:
                         continue
-                    atom1, atom2 = pb.atoms
-                    group.new_pseudobond(atom1, atom2)
+                    shortest_pbs.append(pb)
+
+            pbs_atoms_dict = self.pbs_atoms(shortest_pbs, find_shortest=True)
+            
+            for atoms in list(pbs_atoms_dict.keys()):
+                group.new_pseudobond(atoms[0], atoms[1])
             
             models.add([group])
 
@@ -246,6 +252,27 @@ class XMAS(ToolInstance):
             group_item.setText(1, item.text(1))
 
             iterator += 1
+
+    
+    def pbs_atoms(self, pbs, find_shortest=False):
+        
+        length = len(pbs)
+        atom_dict = {}    
+        for i in range(length):
+            pb = pbs[i]
+            if not find_shortest:
+                atom1, atom2 = pb.atom1, pb.atom2
+            else:
+                atom1, atom2 = pb.atoms
+            atoms = sorted([atom1, atom2])
+            atoms = tuple(atoms)
+            if atoms not in atom_dict.keys():
+                atom_dict[atoms] = []
+            if find_shortest:
+                continue
+            atom_dict[atoms].append(pb.peptide_pair)
+
+        return atom_dict
 
 
     def create_venn(self):
@@ -730,14 +757,7 @@ class XMAS(ToolInstance):
             group.radius = 0.5
         
         length = len(pbonds)
-        atom_dict = {}    
-        for i in range(length):
-            pb = pbonds[i]
-            atoms = sorted([pb.atom1, pb.atom2])
-            atoms = tuple(atoms)
-            if atoms not in atom_dict.keys():
-                atom_dict[atoms] = []
-            atom_dict[atoms].append(pb.peptide_pair)
+        atom_dict = self.pbs_atoms(pbonds)
 
         atom_list = list(atom_dict.keys())
             

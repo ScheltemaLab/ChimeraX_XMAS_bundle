@@ -6,7 +6,7 @@ will be displayed without the ChimeraX- prefix.
 -->
 
 <BundleInfo name="ChimeraX-XMAS"
-	    version="1.0.0" package="chimerax.xmas"
+	    version="1.0.1" package="chimerax.xmas"
   	    minSessionVersion="1" maxSessionVersion="1">
 
   <!-- Additional information about bundle source -->
