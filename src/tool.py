@@ -1830,13 +1830,14 @@ class Slider:
         self.setters = [self.setter_min, self.setter_max]
         alignments = [Qt.AlignRight, Qt.AlignLeft]
         texts = ["0", str(maximum)]
-        minimum = [True, False]
         for i in range(len(self.setters)):
             setter = self.setters[i]
             setter.setAlignment(alignments[i])
             setter.setValidator(QIntValidator())
             setter.setText(texts[i])
-            setter.textChanged.connect(lambda: self.change_slider_value(minimum[i]))
+        # Connecting to 'change_slider_value' in the for-loop does not work
+        self.setter_min.textChanged.connect(lambda: self.change_slider_value(True))
+        self.setter_max.textChanged.connect(lambda: self.change_slider_value(False))
 
         
     def display_pseudobonds(self, value_type, pbs):
@@ -1875,8 +1876,6 @@ class Slider:
             
     def change_slider_value(self, minimum):
 
-        print(self.setter_min.text())
-        
         if minimum:
             values = (int(self.setter_min.text()), self.slider.value()[1])
         else:
