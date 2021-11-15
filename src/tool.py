@@ -1769,7 +1769,7 @@ class ColorScore(ColorKeyModel):
             rgbas = [(1,0,0,1), (1,0.5,0,1), (1,1,0,1), (0.5,1,0,1), (0,1,0,1)]
             labels = ["0", " ", "100", " ", "≥200"]
         else:
-            rgbas = [(1,1/3,1,1), (1,2/3,1,1), (1,1,1,1), (0.5,5/6,1,1), (0,2/3,1,1)]
+            rgbas = [(1,1/3,1,1), (5/6,1/2,5/6,1), (2/3,2/3,2/3,1), (1/3,2/3,5/6,1), (0,2/3,1,1)]
             minimum = distances[0]
             maximum = distances[1]
             sum_values = minimum + maximum
@@ -1778,7 +1778,7 @@ class ColorScore(ColorKeyModel):
             middle = int((minimum + maximum)/2)
 
             labels = [str(minimum), " ", str(middle), " ", str(maximum)]
-            cmap = Colormap(None, ((1,1/3,1,1), (1,1,1,1), (0,2/3,1,1)))
+            cmap = Colormap(None, ((1,1/3,1,1), (2/3,2/3,2/3,1), (0,2/3,1,1)))
             self.cmap = cmap.linear_range(minimum, maximum)
 
         number_of_labels = len(labels)
