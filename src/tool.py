@@ -21,10 +21,7 @@ class XMAS(ToolInstance):
     # Does this instance persist when session closes
     SESSION_ENDURING = False  
     # We do save/restore in sessions  
-    SESSION_SAVE = True         
-    # Let ChimeraX know about our help page
-    help = "help:user/tools/tutorial.html"
-                                
+    SESSION_SAVE = True                                         
 
     def __init__(self, session, tool_name):
         # "session"   - chimerax.core.session.Session instance
@@ -169,23 +166,19 @@ class XMAS(ToolInstance):
         pbonds_layout.addWidget(self.pbonds_menu)
 
         subset_button = QPushButton()
-        subset_button.setText("Export subsets")
-        shortest_button = QPushButton()
-        shortest_button.setText("Find shortest")
-        distance_button = QPushButton()
-        distance_button.setText("Plot distances")
-        overlap_button = QPushButton()
-        overlap_button.setText("Plot overlap")
-        buttons = [subset_button, shortest_button, distance_button, overlap_button]
-        functions = [self.show_subset_dialog, self.find_shortest, self.create_distance_plot, self.create_venn]
+        subset_button.setText("Export")
+        subset_button.clicked.connect(lambda: self.is_selection_empty(self.show_subset_dialog))
+        analyze_button = QPushButton()
+        analyze_button.setText("Analyze")
+        analyze_button.clicked.connect(lambda: self.is_selection_empty(self.show_analyze_dialog))
+        buttons = [subset_button, analyze_button]
+        # functions = [self.show_subset_dialog, self.show_analyze_dialog]
 
-        # Upon clicking the subset button, a dialog is opened where the 
-        # user can select the parameters for the data subset required
         for i in range(len(buttons)):
             button = buttons[i]
             buttons_layout.addWidget(button)
-            function = functions[i]
-            button.clicked.connect(function)
+        #     function = functions[i]
+        #     button.clicked.connect(lambda: self.is_selection_empty(function))
 
         outer_layout.addLayout(top_layout)
         outer_layout.addLayout(pbonds_layout)
@@ -271,34 +264,18 @@ class XMAS(ToolInstance):
             root.removeChild(item) 
 
 
-    def find_shortest(self):
+    def find_shortest(self, pbs_dict):
 
-        from PyQt5.QtWidgets import QTreeWidgetItemIterator
-        from PyQt5.QtCore import Qt
+        for model in pbs_dict:
+            name = model.name.replace(".pb", "_shortest.pb")
+            peptide_pairs_dict = {}
 
-        iterator = QTreeWidgetItemIterator(
-            self.pbonds_menu, QTreeWidgetItemIterator.Checked)
-
-        if not iterator.value():
-            print("Please select pseudobonds")
-            return
-
-        models = self.session.models
-
-        while iterator.value():
-            item = iterator.value()
-            model = item.model
-            pbs = model.pseudobonds
-            pbs_dict = {}
-            name = model.name.replace(".pb", "")
-            new_name = name + "_shortest.pb"
-
-            for pb in pbs:
+            for pb in pbs_dict[model]:
                 peptide_pairs = pb.peptide_pairs
                 for pair in peptide_pairs:
-                    if not pair in pbs_dict:
-                        pbs_dict[pair] = []
-                    pbs_dict[pair].append(pb)
+                    if not pair in peptide_pairs_dict:
+                        peptide_pairs_dict[pair] = []
+                    peptide_pairs_dict[pair].append(pb)
             
             group = self.pb_manager.get_group(new_name)
             group.color = [255, 255, 0, 255]
@@ -306,15 +283,16 @@ class XMAS(ToolInstance):
 
             shortest_pbs = []
 
-            for pair in pbs_dict:
+            for pair in peptide_pairs_dict:
                 minimum = float("inf")
-                pbs = pbs_dict[pair]              
+                pbs = peptide_pairs_dict[pair]              
                 for pb in pbs:
-                    length = pb.length
+                    # Round off to two decimals to ignore minor differences
+                    length = "%.2f" % pb.length
                     if length < minimum:
                         minimum = length 
                 for pb in pbs:
-                    if pb.length > minimum:
+                    if "%.2f" % pb.length > minimum:
                         continue
                     shortest_pbs.append(pb)
 
@@ -329,75 +307,62 @@ class XMAS(ToolInstance):
                     new_name, Qt.MatchExactly, column=0)[0]
             group_item.setText(1, item.text(1))
 
-            iterator += 1
 
-
-    def create_venn(self):
+    def create_venn(self, pbs_dict):
 
         import matplotlib.pyplot as plt
-        
-        pbs_dict = self.get_pseudobonds_dict(distance=False)
 
-        number_of_groups = len(pbs_dict)
+        number_of_groups = len(pbs_by_group)
 
-        if (number_of_groups > 2 and number_of_groups < 8):
+        if number_of_groups == 3:
             from matplotlib_venn import venn3
             function = venn3
         elif number_of_groups == 2:
             from matplotlib_venn import venn2
             function = venn2
         else:
+            print("Venn diagrams can only be generated for two or three groups")
             return
 
-        sets = []
-
-        for pb_group in pbs_dict:
-            pbs = pbs_dict[pb_group]
-            sets.append(set(pbs))
-
-        function(sets, tuple(pbs_dict.keys()))
+        names, sets = self.get_plotting_data(pbs_dict , distance=False)
+            
+        function(sets, tuple(names))
         plt.show()
 
 
-    def create_distance_plot(self):
+    def create_distance_plot(self, pbs_dict):
 
         import seaborn as sns
         import matplotlib.pyplot as plt
 
-        pbs_dict = self.get_pseudobonds_dict()   
-
-        models = list(pbs_dict.keys())
-        distances = list(pbs_dict.values())       
+        names, distances = self.get_plotting_data(pbs_dict)    
 
         sns.set(style="whitegrid")
         ax = sns.boxenplot(data=distances, orient="h")
         ax = sns.stripplot(data=distances, orient="h", size = 4, color = "gray")
         plt.xlabel("Distance (Å)")
-        yticks = plt.yticks(plt.yticks()[0], models)
+        yticks = plt.yticks(plt.yticks()[0], names)
         plt.tight_layout()
         plt.show()
 
 
-    def get_pseudobonds_dict(self, distance=True):
-        from chimerax.atomic.pbgroup import selected_pseudobonds
+    def get_plotting_data(self, pbs_dict, distance=True):
 
-        selected_pbs = selected_pseudobonds(self.session)
-        by_group = selected_pbs.by_group
-        pbs_dict = {}
+        number_of_groups = len(pbs_dict)
+        names = [None]*number_of_groups
+        values = [None]*number_of_groups
 
-        for group in by_group:
-            name = group[0].name
-            if not name.endswith(".pb"):
-                continue
-            key = name.replace(".pb", "")
-            pbs = group[1]
+        for i in range(number_of_groups):
+            model = list(pbs_dict.keys())[i]
+            names[i] = model.name.replace(".pb", "")
+            pbs = pbs_dict[model]
             if distance:
-                value = [pb.length for pb in pbs]
+                values[i] = [pb.length for pb in pbs]
             else:
-                value = [pb.string() for pb in pbs]
-            pbs_dict[key] = value
+                values[i] = set(pb.string() for pb in pbs)
 
-        return pbs_dict
+        return names, values
+
     
     def dialog(self):
 
@@ -1005,18 +970,39 @@ class XMAS(ToolInstance):
             elif (model.name == item.text(column)
                     and item.checkState(column) == Qt.Unchecked):
                 model.selected = False
+
+    def is_selection_empty(self, function):
+
+        selection = self.get_pseudobonds()
+
+        if selection is None:
+            print("Please select pseudobonds")
+        else:
+            function(selection)
+
+
+    def show_analyze_dialog(self, pbs_dict):
+
+        from PyQt5.QtWidgets import QDialog, QVBoxLayout, QPushButton
+
+        self.analyze_dialog = QDialog()
+        self.analyze_dialog.setWindowTitle("Analyze selected pseudobonds")
+
+        layout = QVBoxLayout()
+        buttons = [None]*3
+        texts = ["Find shortest", "Plot distances", "Find overlap"]
+        functions = [self.find_shortest, self.create_distance_plot, self.create_venn]
+
+        for i in range(len(buttons)):
+            button = buttons[i]
+            button.setText(texts[i])
+            button.clicked.connect(lambda: functions[i](pbs_dict))
                 
 
-    def show_subset_dialog(self):
+    def show_subset_dialog(self, pbs_dict):
 
         # Through this dialog, the user can export a subset of the
         # models selected in the pbonds menu
-
-        pseudobonds, models = self.get_pseudobonds_models()
-
-        if len(pseudobonds) == 0:
-            print("Please select pseudobonds")
-            return
 
         from PyQt5.QtWidgets import (QGridLayout, QDialog, QTreeWidget, QTreeWidgetItem, QListWidget, 
             QListWidgetItem, QPushButton, QHBoxLayout, QComboBox, QCheckBox, QLabel)
@@ -1030,13 +1016,17 @@ class XMAS(ToolInstance):
         self.dialog_model_selector = QTreeWidget()
         self.dialog_model_selector.setHeaderLabels(["Name", "ID"])
 
-        for model in models:
+        pbs = []
+
+        for model in pbs_dict:
             item = QTreeWidgetItem(self.dialog_model_selector)
             item.setText(0, model.name)
             item.setText(1, model.id_string)
             item.setCheckState(0, Qt.Checked)
             item.setFlags(item.flags() & ~Qt.ItemIsSelectable)
             item.model = model
+            model_pbs = pbs_dict[model]
+            pbs += model_pbs
 
         self.dialog_model_selector.sortItems(1, Qt.AscendingOrder)
 
@@ -1049,11 +1039,10 @@ class XMAS(ToolInstance):
             item.setText(link_type)
             item.setCheckState(Qt.Checked)
             item.setFlags(item.flags() & ~Qt.ItemIsSelectable)
-        if len(models) == 1:
+        if len(pbs_dict) == 1:
             item = self.link_selector.findItems("Interlinks", Qt.MatchExactly)[0]
             item.setFlags(Qt.NoItemFlags)
         
-        pbs = self.get_pseudobonds()
         _, maximum_distance = self.extreme_pseudobond_distances(pbs)
         self.distance_slider = Slider("distance", True, maximum_distance, pbs)
         make_score_slider = True
@@ -1067,7 +1056,7 @@ class XMAS(ToolInstance):
             score_slider = Slider("score", True, maximum_score, pbs)
 
         self.overlap_number = QComboBox()
-        number_of_groups = self.get_pseudobond_groups(pseudobonds)
+        number_of_groups = len(pbs_dict)
         overlap_list = [str(i) for i in range(1, number_of_groups + 1)]
         self.overlap_number.addItems(overlap_list)
         overlap_string = "out of %s pseudobond models" % str(number_of_groups)
@@ -1108,10 +1097,10 @@ class XMAS(ToolInstance):
 
         self.subset_dialog.setLayout(layout)
         
-        export_button.clicked.connect(lambda: self.export_subset(pseudobonds, checkboxes))
+        export_button.clicked.connect(lambda: self.export_subset(pbs, checkboxes))
 
         self.subset_dialog.show()
-        self.subset_dialog.rejected.connect(lambda: self.display_all(pseudobonds))
+        self.subset_dialog.rejected.connect(lambda: self.display_all(pbs))
 
     
     def get_maximum_score(self, pbs):
@@ -1149,13 +1138,27 @@ class XMAS(ToolInstance):
         from chimerax.atomic.pbgroup import selected_pseudobonds
 
         all_selected_pbs = selected_pseudobonds(self.session)
-        target_pbs = []
 
-        for pb in all_selected_pbs:
-            if pb.group.name.endswith(".pb"):
-                target_pbs.append(pb)
+        if len(all_selected_pbs) == 0:
+            return None
 
-        return target_pbs
+        by_group = all_selected_pbs.by_group
+        pbs_dict = {}
+
+        for group in by_group:
+            (model, pbs) = group
+            if not model.name.endswith(".pb"):
+                continue
+            not_selected = []
+            for pb in pbs:
+                if pb in all_selected_pbs:
+                    continue
+                not_selected.append(pb)
+            for pb in not_selected:
+                pbs.remove(pb)
+            pbs_dict[model] = pbs
+
+        return pbs_dict
 
 
     def get_pseudobond_groups(self, pseudobonds):
@@ -1165,43 +1168,7 @@ class XMAS(ToolInstance):
         for pb in pseudobonds:
             pb_groups.add(pb.group)
 
-        return len(pb_groups)      
-
-
-    def get_pseudobonds_models(self):
-
-        # For each selected pseudobond, the IDs of the models that it
-        # is connected to are added to a set. This is then converted to
-        # a list, containing the IDs of all models that the selected
-        # pseudobonds are connected to.
-
-        from chimerax.atomic.pbgroup import PseudobondGroup
-        from chimerax.atomic.structure import Structure
-
-        target_pbs = self.get_pseudobonds()
-        pb_strings = set()
-        models = set()
-        pbs = []
-
-        for model in self.session.models:
-            if (isinstance(model, PseudobondGroup) 
-                    or not isinstance(model, Structure)):
-                continue
-            for pb in target_pbs:
-                pb_strings.add(pb.string())
-                atom1, atom2 = pb.atoms
-                if (atom1 in model.atoms or atom2 in model.atoms):
-                    # Don't create a new set for every model
-                    if not hasattr(pb, "models"):
-                        pb.models = set()
-                    pb.models.add(model)
-                    models.add(model)
-
-        for pb in target_pbs:
-            if pb.string() in pb_strings:
-                pbs.append(pb)
-
-        return pbs, list(models)
+        return len(pb_groups)   
 
 
     def export_subset(self, pseudobonds, checkboxes):
