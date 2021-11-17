@@ -975,18 +975,20 @@ class XMAS(ToolInstance):
 
         selection = self.get_pseudobonds()
 
-        if selection is None:
+        if len(selection) == 0:
             print("Please select pseudobonds")
         else:
             function(selection)
 
 
-    def show_analyze_dialog(self, pbs_dict):
+    def show_analyze_dialog(self, pbs):
 
         from PyQt5.QtWidgets import QDialog, QVBoxLayout, QPushButton
 
         self.analyze_dialog = QDialog()
         self.analyze_dialog.setWindowTitle("Analyze selected pseudobonds")
+
+        pbs_dict = self.get_pseudobonds_dictionary(pbs)
 
         layout = QVBoxLayout()
         buttons = [None]*3
@@ -999,7 +1001,7 @@ class XMAS(ToolInstance):
             button.clicked.connect(lambda: functions[i](pbs_dict))
                 
 
-    def show_subset_dialog(self, pbs_dict):
+    def show_subset_dialog(self, pbs):
 
         # Through this dialog, the user can export a subset of the
         # models selected in the pbonds menu
@@ -1016,17 +1018,15 @@ class XMAS(ToolInstance):
         self.dialog_model_selector = QTreeWidget()
         self.dialog_model_selector.setHeaderLabels(["Name", "ID"])
 
-        pbs = []
+        models = pbs.unique_structures
 
-        for model in pbs_dict:
+        for model in models:
             item = QTreeWidgetItem(self.dialog_model_selector)
             item.setText(0, model.name)
             item.setText(1, model.id_string)
             item.setCheckState(0, Qt.Checked)
             item.setFlags(item.flags() & ~Qt.ItemIsSelectable)
             item.model = model
-            model_pbs = pbs_dict[model]
-            pbs += model_pbs
 
         self.dialog_model_selector.sortItems(1, Qt.AscendingOrder)
 
@@ -1039,8 +1039,9 @@ class XMAS(ToolInstance):
             item.setText(link_type)
             item.setCheckState(Qt.Checked)
             item.setFlags(item.flags() & ~Qt.ItemIsSelectable)
-        if len(pbs_dict) == 1:
+        if len(models) == 1:
             item = self.link_selector.findItems("Interlinks", Qt.MatchExactly)[0]
+            item.setCheckState(Qt.Unchecked)
             item.setFlags(Qt.NoItemFlags)
         
         _, maximum_distance = self.extreme_pseudobond_distances(pbs)
@@ -1049,14 +1050,14 @@ class XMAS(ToolInstance):
         for pb in pbs:
             if not hasattr(pb, "xlinkx_score"):
                 make_score_slider = False
-                score_slider = Slider("score", False)
+                self.score_slider = Slider("score", False)
                 break
         if make_score_slider:
             maximum_score = self.get_maximum_score(pbs)
-            score_slider = Slider("score", True, maximum_score, pbs)
+            self.score_slider = Slider("score", True, maximum_score, pbs)
 
         self.overlap_number = QComboBox()
-        number_of_groups = len(pbs_dict)
+        number_of_groups = len(pbs.by_group)
         overlap_list = [str(i) for i in range(1, number_of_groups + 1)]
         self.overlap_number.addItems(overlap_list)
         overlap_string = "out of %s pseudobond models" % str(number_of_groups)
@@ -1087,7 +1088,7 @@ class XMAS(ToolInstance):
         layout.addWidget(self.link_selector, 1, 1)
         layout.addWidget(QLabel(""), 2, 0)
         layout.addLayout(self.distance_slider.layout, 3, 0, 2, 2)
-        layout.addLayout(score_slider.layout, 5, 0, 2, 2)
+        layout.addLayout(self.score_slider.layout, 5, 0, 2, 2)
         layout.addWidget(QLabel(""), 7, 0)
         layout.addWidget(QLabel("Present in at least:"), 8, 0)
         layout.addLayout(overlap_layout, 9, 0)
@@ -1143,7 +1144,6 @@ class XMAS(ToolInstance):
             return None
 
         by_group = all_selected_pbs.by_group
-        pbs_dict = {}
 
         for group in by_group:
             (model, pbs) = group
@@ -1156,19 +1156,19 @@ class XMAS(ToolInstance):
                 not_selected.append(pb)
             for pb in not_selected:
                 pbs.remove(pb)
+        
+        return all_selected_pbs
+
+
+    def get_pseudobonds_dictionary(self, pbs):
+
+        pbs_dict = {}
+
+        for group in pbs.by_group:
+            (model, pbs) = group
             pbs_dict[model] = pbs
 
         return pbs_dict
-
-
-    def get_pseudobond_groups(self, pseudobonds):
-
-        pb_groups = set()
-
-        for pb in pseudobonds:
-            pb_groups.add(pb.group)
-
-        return len(pb_groups)   
 
 
     def export_subset(self, pseudobonds, checkboxes):
@@ -1231,6 +1231,11 @@ class XMAS(ToolInstance):
 
         for pb in pseudobonds:
             in_models = True
+            pb.models = set()
+            a1, a2 = pb.atoms
+            atoms = [a1, a2]
+            for atom in atoms:
+                pb.models.add(atom.structure)
             for model in pb.models:
                 if model not in models:
                     in_models = False
