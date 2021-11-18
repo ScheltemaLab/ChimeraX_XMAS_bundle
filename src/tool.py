@@ -865,6 +865,7 @@ class XMAS(ToolInstance):
             item.setFlags(item.flags() & ~Qt.ItemIsSelectable)
         if len(models) == 1:
             item = self.link_selector.findItems("Interlinks", Qt.MatchExactly)[0]
+            item.setCheckState(Qt.Unchecked)
             item.setFlags(Qt.NoItemFlags)
         
         slider_layout = QGridLayout()
