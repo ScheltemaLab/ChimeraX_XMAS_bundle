@@ -70,7 +70,6 @@ class XMAS(ToolInstance):
         
         outer_layout = QVBoxLayout()
         top_layout = QGridLayout()
-        map_layout = QGridLayout()
         pbonds_layout = QVBoxLayout()
         buttons_layout = QHBoxLayout()
         
@@ -94,46 +93,9 @@ class XMAS(ToolInstance):
         # Upon clicking the file button, a file dialog is shown, where 
         # the user can select .xlsx files
         file_button.clicked.connect(self.dialog)
-        remove_file_button.clicked.connect(self.remove_files)    
-
-        self.map_combobox = QComboBox()
-        self.map_combobox.addItems(["uniform", "by distance", "by score"])
-        self.map_combobox.currentIndexChanged.connect(self.radio_buttons_policy)
-        radio_buttons_text = ["Gradient", "Cutoff"]
-        self.radio_buttons = QButtonGroup()
-        for i in range(len(radio_buttons_text)):
-            text = radio_buttons_text[i]
-            button = QRadioButton(text)
-            self.radio_buttons.addButton(button)
-            button.setEnabled(False)
-            map_layout.addWidget(button, 2, i)
-        radio_buttons = self.radio_buttons.buttons()
-        radio_buttons[0].setChecked(True)
-        radio_buttons[1].toggled.connect(self.cutoff_values_policy)
-        self.cutoff_values = {}
-        cutoff_labels = ["Min", "Max"]
+        remove_file_button.clicked.connect(self.remove_files)
         map_button = QPushButton()
         map_button.setText("Map crosslinks")
-
-        map_layout.addWidget(QLabel("Mapping settings"), 0, 0, 1, 2)
-        map_layout.addWidget(QLabel("Color policy:"), 1, 0)
-        map_layout.addWidget(self.map_combobox, 1, 1)
-        i = 2
-        for label in cutoff_labels:
-            qlabel = QLabel(label + ":")
-            line_edit = QLineEdit()
-            line_edit.setValidator(QDoubleValidator(0.0, float("inf"), 1000))
-            widgets = [qlabel, line_edit]
-            j = 2
-            for widget in widgets:
-                map_layout.addWidget(widget, i, j)
-                size_policy = widget.sizePolicy()
-                size_policy.setRetainSizeWhenHidden(True)
-                widget.setSizePolicy(size_policy)
-                widget.setVisible(False)
-                j += 1
-            self.cutoff_values[label] = widgets
-            i += 1
 
         # Upon clicking the map button, the map_button_clicked method is
         # called twice, each time with different arguments
@@ -148,8 +110,7 @@ class XMAS(ToolInstance):
         top_layout.addWidget(self.file_selector, 1, 2, 1, 2)
         top_layout.addWidget(file_button, 2, 2)
         top_layout.addWidget(remove_file_button, 2, 3)
-        top_layout.addLayout(map_layout, 3, 0, 4, 2)
-        top_layout.addWidget(map_button, 7, 3)
+        top_layout.addWidget(map_button, 3, 2, 1, 2)
 
         # In this treewidget, pseudond models from .pb files are shown;
         # both models that are created with XMAS, as well as
@@ -171,14 +132,14 @@ class XMAS(ToolInstance):
         analyze_button = QPushButton()
         analyze_button.setText("Analyze")
         analyze_button.clicked.connect(lambda: self.is_selection_empty(self.show_analyze_dialog))
-        buttons = [subset_button, analyze_button]
-        # functions = [self.show_subset_dialog, self.show_analyze_dialog]
+        visualize_button = QPushButton()
+        visualize_button.setText("Visualize")
+        visualize_button.clicked.connect(lambda: self.is_selection_empty(self.show_visualize_dialog))
+        buttons = [subset_button, analyze_button, visualize_button]
 
         for i in range(len(buttons)):
             button = buttons[i]
             buttons_layout.addWidget(button)
-        #     function = functions[i]
-        #     button.clicked.connect(lambda: self.is_selection_empty(function))
 
         outer_layout.addLayout(top_layout)
         outer_layout.addLayout(pbonds_layout)
@@ -200,6 +161,61 @@ class XMAS(ToolInstance):
         # Add models open in session to the window with the "add_models"
         # method 
         self.add_models(self.session.models)
+
+
+    def show_visualize_dialog(self, pbs):
+
+        from PyQt5.QtWidgets import QDialog, QComboBox, QButtonGroup, QRadioButton, QGridLayout, QDialogButtonBox, QLabel, QLineEdit
+        from PyQt5.QtGui import QDoubleValidator
+
+        self.visualize_dialog = QDialog()
+        self.visualize_dialog.setWindowTitle("Visualization settings for selected pseudobonds") 
+
+        layout = QGridLayout()         
+
+        self.map_combobox = QComboBox()
+        self.map_combobox.addItems(["uniform", "by distance", "by score"])
+        self.map_combobox.currentIndexChanged.connect(self.radio_buttons_policy)
+        radio_buttons_text = ["Gradient", "Cutoff"]
+        self.radio_buttons = QButtonGroup()
+        for i in range(len(radio_buttons_text)):
+            text = radio_buttons_text[i]
+            button = QRadioButton(text)
+            self.radio_buttons.addButton(button)
+            button.setEnabled(False)
+            layout.addWidget(button, 2, i)
+        radio_buttons = self.radio_buttons.buttons()
+        radio_buttons[0].setChecked(True)
+        radio_buttons[1].toggled.connect(self.cutoff_values_policy)
+        self.cutoff_values = {}
+        cutoff_labels = ["Min", "Max"]
+        
+        layout.addWidget(QLabel("Mapping settings"), 0, 0, 1, 2)
+        layout.addWidget(QLabel("Color policy:"), 1, 0)
+        layout.addWidget(self.map_combobox, 1, 1)
+        i = 2
+        for label in cutoff_labels:
+            qlabel = QLabel(label + ":")
+            line_edit = QLineEdit()
+            line_edit.setValidator(QDoubleValidator(0.0, float("inf"), 1000))
+            widgets = [qlabel, line_edit]
+            j = 2
+            for widget in widgets:
+                layout.addWidget(widget, i, j)
+                size_policy = widget.sizePolicy()
+                size_policy.setRetainSizeWhenHidden(True)
+                widget.setSizePolicy(size_policy)
+                widget.setVisible(False)
+                j += 1
+            self.cutoff_values[label] = widgets
+            i += 1
+
+        apply_cancel = QDialogButtonBox(QDialogButtonBox.Apply | QDialogButtonBox.Cancel)        
+        apply_cancel.accepted.connect(lambda: print("Apply"))
+        layout.addWidget(apply_cancel, 4, 0, 1, 2)
+
+        self.visualize_dialog.setLayout(layout)
+        self.visualize_dialog.show()
 
     
     def cutoff_values_policy(self, checked):
@@ -1914,7 +1930,6 @@ class NoEditDelegate(QStyledItemDelegate):
     
     def __init__(self, parent = None):
         super().__init__(parent)
-#C++ TO PYTHON CONVERTER WARNING: 'const' methods are not available in Python:
-#ORIGINAL LINE: virtual QWidget* createEditor(QWidget *parent, const QStyleOptionViewItem &option, const QModelIndex &index) const
+
     def createEditor(self, parent, option, index):
         return None
