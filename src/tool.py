@@ -264,10 +264,19 @@ class XMAS(ToolInstance):
             root.removeChild(item) 
 
 
-    def find_shortest(self, pbs_dict):
+    def find_shortest(self, pbs_dict, names):
+
+        from PyQt5.QtCore import Qt
+
+        i = 0
 
         for model in pbs_dict:
-            name = model.name.replace(".pb", "_shortest.pb")
+
+            if not hasattr(model, "XMAS_made"):
+                print("Find shortest option unavailable for %s: model has not been generated with XMAS" % model.name)
+                continue
+
+            name = names[i] + "_shortest.pb"
             peptide_pairs_dict = {}
 
             for pb in pbs_dict[model]:
@@ -277,7 +286,7 @@ class XMAS(ToolInstance):
                         peptide_pairs_dict[pair] = []
                     peptide_pairs_dict[pair].append(pb)
             
-            group = self.pb_manager.get_group(new_name)
+            group = self.pb_manager.get_group(name)
             group.color = [255, 255, 0, 255]
             group.radius = 0.5
 
@@ -288,11 +297,11 @@ class XMAS(ToolInstance):
                 pbs = peptide_pairs_dict[pair]              
                 for pb in pbs:
                     # Round off to two decimals to ignore minor differences
-                    length = "%.2f" % pb.length
+                    length = float("%.2f" % pb.length)
                     if length < minimum:
                         minimum = length 
                 for pb in pbs:
-                    if "%.2f" % pb.length > minimum:
+                    if float("%.2f" % pb.length) > minimum:
                         continue
                     shortest_pbs.append(pb)
 
@@ -301,18 +310,20 @@ class XMAS(ToolInstance):
             for atoms in list(pbs_atoms_dict.keys()):
                 group.new_pseudobond(atoms[0], atoms[1])
             
-            models.add([group])
+            self.session.models.add([group])
 
             group_item = self.pbonds_menu.findItems(
-                    new_name, Qt.MatchExactly, column=0)[0]
-            group_item.setText(1, item.text(1))
+                    name, Qt.MatchExactly, column=0)[0]
+            group_item.setText(1, model.item.text(1))
+
+            i += 1
 
 
-    def create_venn(self, pbs_dict):
+    def create_venn(self, pbs_dict, names):
 
         import matplotlib.pyplot as plt
 
-        number_of_groups = len(pbs_by_group)
+        number_of_groups = len(pbs_dict)
 
         if number_of_groups == 3:
             from matplotlib_venn import venn3
@@ -324,18 +335,18 @@ class XMAS(ToolInstance):
             print("Venn diagrams can only be generated for two or three groups")
             return
 
-        names, sets = self.get_plotting_data(pbs_dict , distance=False)
+        sets = self.get_plotting_data(pbs_dict, distance=False)
             
         function(sets, tuple(names))
         plt.show()
 
 
-    def create_distance_plot(self, pbs_dict):
+    def create_distance_plot(self, pbs_dict, names):
 
         import seaborn as sns
         import matplotlib.pyplot as plt
 
-        names, distances = self.get_plotting_data(pbs_dict)    
+        distances = self.get_plotting_data(pbs_dict)    
 
         sns.set(style="whitegrid")
         ax = sns.boxenplot(data=distances, orient="h")
@@ -349,19 +360,17 @@ class XMAS(ToolInstance):
     def get_plotting_data(self, pbs_dict, distance=True):
 
         number_of_groups = len(pbs_dict)
-        names = [None]*number_of_groups
         values = [None]*number_of_groups
 
         for i in range(number_of_groups):
             model = list(pbs_dict.keys())[i]
-            names[i] = model.name.replace(".pb", "")
             pbs = pbs_dict[model]
             if distance:
                 values[i] = [pb.length for pb in pbs]
             else:
                 values[i] = set(pb.string() for pb in pbs)
 
-        return names, values
+        return values
 
     
     def dialog(self):
@@ -786,6 +795,7 @@ class XMAS(ToolInstance):
         group.radius = 0.5
         group.color = [255, 255, 0, 255]
         group.dashes = 8
+        group.XMAS_made = True
 
         pbs_atoms_dict = self.pbs_atoms(pbonds)
             
@@ -975,7 +985,7 @@ class XMAS(ToolInstance):
 
         selection = self.get_pseudobonds()
 
-        if len(selection) == 0:
+        if selection is None:
             print("Please select pseudobonds")
         else:
             function(selection)
@@ -983,7 +993,8 @@ class XMAS(ToolInstance):
 
     def show_analyze_dialog(self, pbs):
 
-        from PyQt5.QtWidgets import QDialog, QVBoxLayout, QPushButton
+        from PyQt5.QtWidgets import QDialog, QVBoxLayout, QPushButton, QTreeWidget, QTreeWidgetItem, QLabel
+        from PyQt5.QtCore import Qt
 
         self.analyze_dialog = QDialog()
         self.analyze_dialog.setWindowTitle("Analyze selected pseudobonds")
@@ -991,14 +1002,55 @@ class XMAS(ToolInstance):
         pbs_dict = self.get_pseudobonds_dictionary(pbs)
 
         layout = QVBoxLayout()
-        buttons = [None]*3
+        shortest_button = QPushButton()
+        distance_plot_button = QPushButton()
+        venn_button = QPushButton()
+        buttons = [shortest_button, distance_plot_button, venn_button]
         texts = ["Find shortest", "Plot distances", "Find overlap"]
-        functions = [self.find_shortest, self.create_distance_plot, self.create_venn]
 
         for i in range(len(buttons)):
             button = buttons[i]
             button.setText(texts[i])
-            button.clicked.connect(lambda: functions[i](pbs_dict))
+            layout.addWidget(button)
+
+        names_menu = QTreeWidget()
+        names_menu.setHeaderLabels(["Model name", "Chosen name"])
+        names_menu.setItemDelegateForColumn(0, NoEditDelegate(self.analyze_dialog))
+        for model in pbs_dict:
+            item = QTreeWidgetItem(names_menu)
+            item.setFlags(item.flags() | Qt.ItemIsEditable)
+            text = model.name
+            item.setText(0, text)
+            item.setText(1, text.replace(".pb", ""))
+            
+        shortest_button.clicked.connect(lambda: self.get_names(names_menu, self.find_shortest, pbs_dict))
+        distance_plot_button.clicked.connect(lambda: self.get_names(names_menu, self.create_distance_plot, pbs_dict))
+        venn_button.clicked.connect(lambda: self.get_names(names_menu, self.create_venn, pbs_dict))
+
+        layout.addWidget(QLabel("")) 
+        layout.addWidget(QLabel("Apply different model names (optional):"))
+        layout.addWidget(names_menu)
+
+        self.analyze_dialog.setLayout(layout)
+        self.analyze_dialog.show()
+
+
+    def get_names(self, treewidget, function, pbs_dict):
+
+        from PyQt5.QtWidgets import QTreeWidgetItemIterator
+
+        iterator = QTreeWidgetItemIterator(treewidget)
+        names = [None]*len(pbs_dict)
+
+        i = 0
+
+        while iterator.value():
+            item = iterator.value()
+            names[i] = item.text(1)
+            i += 1
+            iterator += 1
+
+        function(pbs_dict, names)
                 
 
     def show_subset_dialog(self, pbs):
@@ -1854,3 +1906,15 @@ class Slider:
             values = (self.slider.value()[0], int(self.setter_max.text()))
   
         self.slider.setValue(values)
+
+
+from PyQt5.QtWidgets import QStyledItemDelegate
+
+class NoEditDelegate(QStyledItemDelegate):
+    
+    def __init__(self, parent = None):
+        super().__init__(parent)
+#C++ TO PYTHON CONVERTER WARNING: 'const' methods are not available in Python:
+#ORIGINAL LINE: virtual QWidget* createEditor(QWidget *parent, const QStyleOptionViewItem &option, const QModelIndex &index) const
+    def createEditor(self, parent, option, index):
+        return None
