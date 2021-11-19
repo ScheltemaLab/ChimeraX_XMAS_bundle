@@ -57,6 +57,8 @@ class XMAS(ToolInstance):
         cmap = Colormap(None, ((1, 0, 0, 1), (1, 1, 0, 1), (0, 1, 0, 1)))
         self.score_cmap = cmap.linear_range(0, 200)
 
+        self.map_crosslinks(None, ["1"], ["C:/Users/ilsel/Documents/MCLS/Bioinformatics_profile/xmas/FibB_PD.xlsx"])
+
 
     def _build_ui(self):
 
@@ -165,63 +167,58 @@ class XMAS(ToolInstance):
 
     def show_visualize_dialog(self, pbs):
 
-        from PyQt5.QtWidgets import QDialog, QComboBox, QButtonGroup, QRadioButton, QGridLayout, QDialogButtonBox, QLabel, QLineEdit
+        from PyQt5.QtWidgets import QDialog, QVBoxLayout, QComboBox, QButtonGroup, QRadioButton, QGridLayout, QDialogButtonBox, QLabel, QLineEdit
         from PyQt5.QtGui import QDoubleValidator
 
         self.visualize_dialog = QDialog()
-        self.visualize_dialog.setWindowTitle("Visualization settings for selected pseudobonds") 
+        self.visualize_dialog.setWindowTitle("Visualization settings selected pseudobonds") 
 
-        layout = QGridLayout()         
+        outer_layout = QVBoxLayout()
+        settings_layout = QGridLayout()
 
-        self.map_combobox = QComboBox()
-        self.map_combobox.addItems(["uniform", "by distance", "by score"])
-        self.map_combobox.currentIndexChanged.connect(self.radio_buttons_policy)
-        radio_buttons_text = ["Gradient", "Cutoff"]
-        self.radio_buttons = QButtonGroup()
-        for i in range(len(radio_buttons_text)):
-            text = radio_buttons_text[i]
-            button = QRadioButton(text)
-            self.radio_buttons.addButton(button)
-            button.setEnabled(False)
-            layout.addWidget(button, 2, i)
-        radio_buttons = self.radio_buttons.buttons()
-        radio_buttons[0].setChecked(True)
-        radio_buttons[1].toggled.connect(self.cutoff_values_policy)
-        self.cutoff_values = {}
-        cutoff_labels = ["Min", "Max"]
-        
-        layout.addWidget(QLabel("Mapping settings"), 0, 0, 1, 2)
-        layout.addWidget(QLabel("Color policy:"), 1, 0)
-        layout.addWidget(self.map_combobox, 1, 1)
-        i = 2
-        for label in cutoff_labels:
-            qlabel = QLabel(label + ":")
-            line_edit = QLineEdit()
-            line_edit.setValidator(QDoubleValidator(0.0, float("inf"), 1000))
-            widgets = [qlabel, line_edit]
-            j = 2
+        settings_layout.addWidget(QLabel("Color by distance (Å):"), 0, 0, 1, 2)  
+
+        sliders = self.make_sliders(pbs, "Visualize")
+        i = 1
+        for slider in sliders:
+            settings_layout.addLayout(slider.layout, i, 2)
+            i += 2
+            widgets = slider.widgets
             for widget in widgets:
-                layout.addWidget(widget, i, j)
                 size_policy = widget.sizePolicy()
                 size_policy.setRetainSizeWhenHidden(True)
                 widget.setSizePolicy(size_policy)
-                widget.setVisible(False)
-                j += 1
-            self.cutoff_values[label] = widgets
+                widget.setVisible(False)       
+
+        policies = ["Color by distance", "Color by gradient"
+        radio_buttons_text = ["Gradient", "Cutoff"]
+        for i in range(len(policies)):
+            settings_layout.addWidget(QLabel(policies[i]), i, 1)            
+            radio_buttons = QButtonGroup()
+            for j in range(len(radio_buttons_text)):
+                text = radio_buttons_text[j]
+                button = QRadioButton(text)
+                radio_buttons.addButton(button)
+                settings_layout.addWidget(button, i + 1, j)
+            radio_buttons = radio_buttons.buttons()
+            radio_buttons[0].setChecked(True)
+            # Continue here:
+            radio_buttons[1].toggled.connect(self.show_slider(i, sliders))
             i += 1
 
-        apply_cancel = QDialogButtonBox(QDialogButtonBox.Apply | QDialogButtonBox.Cancel)        
-        apply_cancel.accepted.connect(lambda: print("Apply"))
-        layout.addWidget(apply_cancel, 4, 0, 1, 2)
+        apply_cancel = QDialogButtonBox(QDialogButtonBox.Cancel | QDialogButtonBox.Apply)        
+        # apply_cancel.clicked.connect(self.color_settings)
+        apply_cancel.rejected.connect(self.visualize_dialog.close)
 
-        self.visualize_dialog.setLayout(layout)
+        outer_layout.addLayout(settings_layout)
+        outer_layout.addWidget(apply_cancel)
+        self.visualize_dialog.setLayout(outer_layout)
         self.visualize_dialog.show()
 
     
-    def cutoff_values_policy(self, checked):
+    def show_slider(self, checked):
 
-        key = list(self.cutoff_values.keys())[0]
-        widget = self.cutoff_values[key][0]
+        widget = self.slider.slider
         visible = widget.isVisible()
 
         if (visible and not checked):
@@ -231,30 +228,8 @@ class XMAS(ToolInstance):
         else:
             return
 
-        for key in self.cutoff_values:
-            widgets = self.cutoff_values[key]
-            for widget in widgets:
-                widget.setVisible(set_visible)
-
-
-    def radio_buttons_policy(self, index):
-        
-        radio_buttons = self.radio_buttons.buttons()
-        radio_gradient = radio_buttons[0]
-        enabled = radio_gradient.isEnabled()
-
-        if (enabled and index == 0):
-            enable = False
-            self.cutoff_values_policy(False)
-        elif (not enabled and index != 0):
-            enable = True
-            if radio_buttons[1].isChecked():
-                self.cutoff_values_policy(True)
-        else:
-            return
-    
-        for button in radio_buttons:
-            button.setEnabled(enable) 
+        for widget in self.slider.widgets:
+            widget.setVisible(set_visible)
 
 
     def remove_files(self):
@@ -791,18 +766,6 @@ class XMAS(ToolInstance):
                    
     def create_pseudobonds_model(self, pbonds, file_path):
 
-        from PyQt5.QtCore import Qt 
-        from chimerax.color_key.model import get_model
-
-        color_policy = self.map_combobox.currentText().replace("by ", "")
-        if color_policy != "uniform":
-            uniform = False
-            radio_button = self.radio_buttons.checkedButton().text()
-            file_path = file_path.replace(".pb", "_" + color_policy + "_" + radio_button.lower() + ".pb")
-        else:
-            uniform = True
-            radio_button = None
-
         name = self.get_short_filename(file_path)
         group = self.pb_manager.get_group(name)
         if group.num_pseudobonds > 0:
@@ -826,35 +789,8 @@ class XMAS(ToolInstance):
                     continue
                 max_score = score
             new_pb.xlinkx_score = max_score
-            if color_policy == "score":
-                color = self.get_color(color_policy, new_pb.xlinkx_score, radio_button, self.score_cmap)
-                new_pb.color = color
 
-        if radio_button == "Gradient":
-            group.dashes = 0
-            if color_policy == "distance":
-                pbs = group.pseudobonds
-                minimum, maximum = self.extreme_pseudobond_distances(pbs)
-                distances = [minimum, maximum]
-            else:
-                distances = None
-            m = ColorScore(self.session, distances, name)
-            self.session.models.add([m], root_model=True)
-
-        if color_policy == "distance":
-            if radio_button == "Gradient":
-                cmap = m.cmap
-            else:
-                cmap = None
-            for pb in group.pseudobonds:
-                pb.color = self.get_color(color_policy, pb.length, radio_button, cmap)
-
-        if uniform:
-            coloring = False
-        else:
-            coloring = True
-        self.write_file(file_path, group, file_type=".pb", coloring=coloring)
-
+        self.write_file(file_path, group, file_type=".pb")
 
         return name
 
@@ -932,16 +868,12 @@ class XMAS(ToolInstance):
             last = item
 
 
-    def write_file(self, file_path, group, file_type=".pb", coloring=False):
+    def write_file(self, file_path, group, file_type=".pb"):
 
         # Write a file
 
         if file_type == ".pb":
             pbs = group.pseudobonds
-            radius = 0.5
-            dashes = 8
-            standard_color = " #ffff00"
-            all_standard = True
         else:
             pbs = group
 
@@ -950,29 +882,12 @@ class XMAS(ToolInstance):
         if (file_type == ".pb" or file_type == ".pb overlapping"):
             for i in range(number_of_pbs):
                 pb = pbs[i]
-                if (coloring and not ".pb overlapping"):
-                    color = " #%02x%02x%02x%02x" % tuple(pb.color)
-                    if color != standard_color:
-                        all_standard = False
-                else:
-                    color = ""
-                lines[i] = "%s%s" % (pb.line, color)
-            if coloring and all_standard:
-                for i in range(number_of_pbs):
-                    lines[i] = lines[i].replace(standard_color, "")           
+                lines[i] = pb.line        
         elif file_type == "export":
             for i in range(number_of_pbs):
                 lines[i] = pbs[i]
 
         lines_deduplicated = list(self.deduplicate(lines))
-
-        if file_type == ".pb":
-            if group.radius != 0.5:
-                radius_line = "; radius = %s" % group.radius
-                lines_deduplicated.insert(0, radius_line)
-            if group.dashes != dashes:
-                dashes_line = "; dashes = %s" % group.dashes
-                lines_deduplicated.insert(0, dashes_line)
 
         created_file = open(file_path, "w")
         for line in lines_deduplicated:
@@ -1110,19 +1025,10 @@ class XMAS(ToolInstance):
         if len(models) == 1:
             item = self.link_selector.findItems("Interlinks", Qt.MatchExactly)[0]
             item.setCheckState(Qt.Unchecked)
-            item.setFlags(Qt.NoItemFlags)
-        
-        _, maximum_distance = self.extreme_pseudobond_distances(pbs)
-        self.distance_slider = Slider("distance", True, maximum_distance, pbs)
-        make_score_slider = True
-        for pb in pbs:
-            if not hasattr(pb, "xlinkx_score"):
-                make_score_slider = False
-                self.score_slider = Slider("score", False)
-                break
-        if make_score_slider:
-            maximum_score = self.get_maximum_score(pbs)
-            self.score_slider = Slider("score", True, maximum_score, pbs)
+            item.setFlags(Qt.NoItemFlags)     
+
+        sliders = self.make_sliders(pbs)
+        self.distance_slider, self.score_slider = sliders
 
         self.overlap_number = QComboBox()
         number_of_groups = len(pbs.by_group)
@@ -1171,6 +1077,33 @@ class XMAS(ToolInstance):
         self.subset_dialog.show()
         self.subset_dialog.rejected.connect(lambda: self.display_all(pbs))
 
+
+    def make_sliders(self, pbs, menu="Export"):
+
+        maximum_distance = self.max_pseudobond_distance(pbs)
+        distance_slider = Slider("distance", True, maximum_distance, pbs, menu)
+        make_score_slider = True
+        for group in pbs.by_group:
+            pb = group[1][0]
+            if not hasattr(pb, "xlinkx_score"):
+                make_score_slider = False
+                break
+        if make_score_slider:
+            maximum_score = self.get_maximum_score(pbs)
+            score_slider = Slider("score", True, maximum_score, pbs, menu)
+        else:
+            score_slider = Slider("score", False)
+        
+        sliders = [distance_slider, score_slider]
+        for i in range(2):
+            slider = sliders[i]
+            slider.linked_slider = sliders[i - 1]
+
+        for pb in pbs:
+            pb.initial_color = pb.color
+
+        return distance_slider, score_slider
+
     
     def get_maximum_score(self, pbs):
 
@@ -1184,22 +1117,18 @@ class XMAS(ToolInstance):
         return int(maximum) + 1
 
 
-    def extreme_pseudobond_distances(self, pbs):
+    def max_pseudobond_distance(self, pbs):
 
-        minimum = float("inf")
         maximum = 0
 
         for pb in pbs:
             length = pb.length
-            if length < minimum:
-                minimum = length
             if length > maximum:
                 maximum = length
 
-        minimum = int(minimum)
         maximum = int(maximum) + 1
 
-        return minimum, maximum
+        return maximum
 
 
     def get_pseudobonds(self):
@@ -1730,8 +1659,7 @@ class Alignment:
 class PrePseudobond:
 
     # To avoid clashed with ChimeraX's Pseudobond class, this class is
-    # named PrePseudobond
-    
+    # named PrePseudobond    
     
     def __init__(self, alignment1, alignment2, peptide_pair):
 
@@ -1831,7 +1759,7 @@ class ColorScore(ColorKeyModel):
 
 class Slider:
     
-    def __init__(self, value_type="distance", enabled=True, maximum=None, pbs=None):
+    def __init__(self, value_type="distance", enabled=True, maximum=None, pbs=None, menu="Export"):
         
         from PyQt5.QtWidgets import QGridLayout, QLabel, QLineEdit
         from qtrangeslider import QRangeSlider
@@ -1864,7 +1792,7 @@ class Slider:
         self.slider.setRange(0, maximum)
         self.slider.setValue((0, maximum))
         signal = self.slider.valueChanged
-        signal.connect(lambda: self.display_pseudobonds(value_type, pbs))
+        self.slider.valueChanged.connect(lambda: self.display_pseudobonds(value_type, pbs, menu))
         signal.connect(self.adjust_setters)
         
         self.setters = [self.setter_min, self.setter_max]
@@ -1879,30 +1807,42 @@ class Slider:
         self.setter_min.textChanged.connect(lambda: self.change_slider_value(True))
         self.setter_max.textChanged.connect(lambda: self.change_slider_value(False))
 
+        i = self.layout.count()
+        self.widgets = [None]*i
+        while i > 0:
+            j = i - 1
+            self.widgets[j] = self.layout.itemAt(j).widget()
+            i -=1
+
         
-    def display_pseudobonds(self, value_type, pbs):
-        
-        slider_values = self.slider.value()
-        minimum = slider_values[0]
-        maximum = slider_values[1]
-        
-        def get_distance(pb):
-            return pb.length
-        
-        def get_score(pb):
-            return pb.xlinkx_score
-        
+    def display_pseudobonds(self, value_type, pbs, menu):
+
         if value_type == "distance":
-            function = get_distance
+            distance_slider = self
+            score_slider = self.linked_slider
         elif value_type == "score":
-            function = get_score
+            distance_slider = self.linked_slider
+            score_slider = self
+
+        distance_range = distance_slider.slider.value()
+        score_range = score_slider.slider.value()
             
         for pb in pbs:
-            value = function(pb)
-            if (value < minimum or value > maximum):
+            distance = pb.length
+            wrong_distance = (distance < distance_range[0] or distance > distance_range[1])
+            wrong_score = False
+            if score_slider.enabled:
+                score = pb.xlinkx_score
+                wrong_score = (score < score_range[0] or score > score_range[1])
+            outside_range = (wrong_distance or wrong_score)
+            if (outside_range and menu == "Export"):
                 pb.display = False
-            else:
+            elif (outside_range and menu == "Visualize"):
+                pb.color = [255, 0, 0, 255]
+            elif (not outside_range and menu == "Export"):
                 pb.display = True
+            else:
+                pb.color = pb.initial_color
 
                 
     def adjust_setters(self):
@@ -1922,6 +1862,7 @@ class Slider:
             values = (self.slider.value()[0], int(self.setter_max.text()))
   
         self.slider.setValue(values)
+
 
 
 from PyQt5.QtWidgets import QStyledItemDelegate
