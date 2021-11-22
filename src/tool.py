@@ -154,7 +154,7 @@ class XMAS(ToolInstance):
         # relatively large size, the tool is not shown on the 
         # user-preferred side of the window, which would have been 
         # arranged by 'self.tool_window.manage("side")'
-        self.tool_window.manage(None)
+        self.tool_window.manage("left")
 
         # Create an empty dictionary where pb models made with Crosslink
         # Mapper will be stored
@@ -175,39 +175,39 @@ class XMAS(ToolInstance):
 
         outer_layout = QVBoxLayout()
         settings_layout = QGridLayout()
-
-        settings_layout.addWidget(QLabel("Color by distance (Å):"), 0, 0, 1, 2)  
-
-        sliders = self.make_sliders(pbs, "Visualize")
-        i = 1
-        for slider in sliders:
-            settings_layout.addLayout(slider.layout, i, 2)
-            i += 2
-            widgets = slider.widgets
-            for widget in widgets:
-                size_policy = widget.sizePolicy()
-                size_policy.setRetainSizeWhenHidden(True)
-                widget.setSizePolicy(size_policy)
-                widget.setVisible(False)       
-
-        policies = ["Color by distance", "Color by gradient"
+        
+        policies = ["Color by distance", "Color by score"]
         radio_buttons_text = ["Gradient", "Cutoff"]
+        sliders = self.make_sliders(pbs, "Visualize")
+
+        row_index = 0
         for i in range(len(policies)):
-            settings_layout.addWidget(QLabel(policies[i]), i, 1)            
-            radio_buttons = QButtonGroup()
-            for j in range(len(radio_buttons_text)):
-                text = radio_buttons_text[j]
+            settings_layout.addWidget(QLabel(policies[i]), row_index, 0, 1, 2)            
+            radio_group = QButtonGroup(self.visualize_dialog)
+            for text_index in range(len(radio_buttons_text)):
+                text = radio_buttons_text[text_index]
                 button = QRadioButton(text)
-                radio_buttons.addButton(button)
-                settings_layout.addWidget(button, i + 1, j)
-            radio_buttons = radio_buttons.buttons()
-            radio_buttons[0].setChecked(True)
-            # Continue here:
-            radio_buttons[1].toggled.connect(self.show_slider(i, sliders))
-            i += 1
+                radio_group.addButton(button)
+                settings_layout.addWidget(button, row_index + 1, text_index)
+                if text_index != 0:
+                    continue
+                button.toggle()
+                slider = sliders[i]
+                settings_layout.addLayout(slider.layout, row_index, 2, 2, 1)
+                widgets = slider.widgets
+                for widget in widgets:
+                    size_policy = widget.sizePolicy()
+                    size_policy.setRetainSizeWhenHidden(True)
+                    widget.setSizePolicy(size_policy)
+                    widget.setVisible(False)     
+                radio_group.buttonClicked.connect(lambda button, s=slider: self.show_slider(button, s))
+            row_index += 2
 
         apply_cancel = QDialogButtonBox(QDialogButtonBox.Cancel | QDialogButtonBox.Apply)        
-        # apply_cancel.clicked.connect(self.color_settings)
+        apply_cancel.clicked.connect(self.apply_clicked)
+        rejected_objects = [self.visualize_dialog, apply_cancel]
+        for obj in rejected_objects:
+            obj.rejected.connect(lambda: self.reset_colors(pbs))
         apply_cancel.rejected.connect(self.visualize_dialog.close)
 
         outer_layout.addLayout(settings_layout)
@@ -215,20 +215,34 @@ class XMAS(ToolInstance):
         self.visualize_dialog.setLayout(outer_layout)
         self.visualize_dialog.show()
 
-    
-    def show_slider(self, checked):
 
-        widget = self.slider.slider
+    def apply_clicked(self):
+        
+        self.visualize_dialog.accept()
+
+
+    def reset_colors(self, pbs):
+
+        for pb in pbs:
+            pb.color = pb.initial_color
+
+    
+    def show_slider(self, button, slider):
+
+        cutoff = button.text() == "Cutoff"
+        widgets = slider.widgets
+        widget = widgets[0]
         visible = widget.isVisible()
 
-        if (visible and not checked):
+        if (visible and not cutoff):
             set_visible = False
-        elif (not visible and checked):
+            slider.set_full_range(slider.maximum)
+        elif (not visible and cutoff):
             set_visible = True
         else:
             return
 
-        for widget in self.slider.widgets:
+        for widget in widgets:
             widget.setVisible(set_visible)
 
 
@@ -933,30 +947,25 @@ class XMAS(ToolInstance):
         pbs_dict = self.get_pseudobonds_dictionary(pbs)
 
         layout = QVBoxLayout()
-        shortest_button = QPushButton()
-        distance_plot_button = QPushButton()
-        venn_button = QPushButton()
-        buttons = [shortest_button, distance_plot_button, venn_button]
-        texts = ["Find shortest", "Plot distances", "Find overlap"]
-
-        for i in range(len(buttons)):
-            button = buttons[i]
-            button.setText(texts[i])
-            layout.addWidget(button)
+        buttons_dict = {"Find shortest": self.find_shortest, "Plot distances": self.create_distance_plot, "Find overlap": self.create_venn}
 
         names_menu = QTreeWidget()
         names_menu.setHeaderLabels(["Model name", "Chosen name"])
         names_menu.setItemDelegateForColumn(0, NoEditDelegate(self.analyze_dialog))
+
+        for key in buttons_dict:
+            button = QPushButton()
+            button.setText(key)
+            layout.addWidget(button)
+            function = buttons_dict[key]
+            button.clicked.connect(lambda _, __, f=function: self.get_names(names_menu, pbs_dict, f))
+            
         for model in pbs_dict:
             item = QTreeWidgetItem(names_menu)
             item.setFlags(item.flags() | Qt.ItemIsEditable)
             text = model.name
             item.setText(0, text)
             item.setText(1, text.replace(".pb", ""))
-            
-        shortest_button.clicked.connect(lambda: self.get_names(names_menu, self.find_shortest, pbs_dict))
-        distance_plot_button.clicked.connect(lambda: self.get_names(names_menu, self.create_distance_plot, pbs_dict))
-        venn_button.clicked.connect(lambda: self.get_names(names_menu, self.create_venn, pbs_dict))
 
         layout.addWidget(QLabel("")) 
         layout.addWidget(QLabel("Apply different model names (optional):"))
@@ -966,7 +975,7 @@ class XMAS(ToolInstance):
         self.analyze_dialog.show()
 
 
-    def get_names(self, treewidget, function, pbs_dict):
+    def get_names(self, treewidget, pbs_dict, function):
 
         from PyQt5.QtWidgets import QTreeWidgetItemIterator
 
@@ -1776,6 +1785,7 @@ class Slider:
         self.slider = QRangeSlider(Qt.Horizontal)
         self.setter_min = QLineEdit()
         self.setter_max = QLineEdit()
+        self.maximum = maximum
         
         self.layout.addWidget(label, 0, 0, 1, 4)
         self.layout.addWidget(self.slider, 1, 1, 1, 2)
@@ -1789,8 +1799,7 @@ class Slider:
                 widget.setEnabled(False)
             return
         
-        self.slider.setRange(0, maximum)
-        self.slider.setValue((0, maximum))
+        self.set_full_range(maximum)
         signal = self.slider.valueChanged
         self.slider.valueChanged.connect(lambda: self.display_pseudobonds(value_type, pbs, menu))
         signal.connect(self.adjust_setters)
@@ -1813,6 +1822,12 @@ class Slider:
             j = i - 1
             self.widgets[j] = self.layout.itemAt(j).widget()
             i -=1
+
+
+    def set_full_range(self, maximum):
+
+        self.slider.setRange(0, maximum)
+        self.slider.setValue((0, maximum))
 
         
     def display_pseudobonds(self, value_type, pbs, menu):
