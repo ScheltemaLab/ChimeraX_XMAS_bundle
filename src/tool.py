@@ -88,30 +88,32 @@ class XMAS(ToolInstance):
         self.file_selector.setColumnWidth(0, 200)
         self.file_selector.setSelectionMode(QAbstractItemView.MultiSelection)
 
-        file_button = QPushButton()
-        file_button.setText("Import files")
-        remove_file_button = QPushButton()
-        remove_file_button.setText("Remove selected files")
-        # Upon clicking the file button, a file dialog is shown, where 
-        # the user can select .xlsx files
-        file_button.clicked.connect(self.dialog)
-        remove_file_button.clicked.connect(self.remove_files)
+        file_buttons = {"Import files":self.dialog, "Remove selected files":self.remove_files}
+        row_index= 2
+        col_index = 2
+
+        for key in file_buttons:
+            button = QPushButton()
+            button.setText(key)
+            action = file_buttons[key]
+            button.clicked.connect(action)
+            top_layout.addWidget(button, row_index, col_index)
+            col_index += 1
+
         map_button = QPushButton()
         map_button.setText("Map crosslinks")
-
         # Upon clicking the map button, the map_button_clicked method is
         # called twice, each time with different arguments
-        map_button.clicked.connect(lambda: self.map_button_clicked(
-            selector=self.model_selector, selector_type="model"))
-        map_button.clicked.connect(lambda: self.map_button_clicked(
-            selector=self.file_selector, selector_type="file"))
+        map_dict = {"model":self.model_selector, "file":self.file_selector}
+        for key in map_dict:
+            selector = map_dict[key]
+            function = lambda _, s=selector, t=key: self.map_button_clicked(s, t)
+            map_button.clicked.connect(function)
         
         top_layout.addWidget(QLabel("Available models"), 0, 0)
         top_layout.addWidget(QLabel("Available files"), 0, 2)
         top_layout.addWidget(self.model_selector, 1, 0, 1, 2)
         top_layout.addWidget(self.file_selector, 1, 2, 1, 2)
-        top_layout.addWidget(file_button, 2, 2)
-        top_layout.addWidget(remove_file_button, 2, 3)
         top_layout.addWidget(map_button, 3, 2, 1, 2)
 
         # In this treewidget, pseudond models from .pb files are shown;
@@ -128,20 +130,14 @@ class XMAS(ToolInstance):
         pbonds_layout.addWidget(QLabel("Crosslink models"))
         pbonds_layout.addWidget(self.pbonds_menu)
 
-        subset_button = QPushButton()
-        subset_button.setText("Export")
-        subset_button.clicked.connect(lambda: self.is_selection_empty(self.show_subset_dialog))
-        analyze_button = QPushButton()
-        analyze_button.setText("Analyze")
-        analyze_button.clicked.connect(lambda: self.is_selection_empty(self.show_analyze_dialog))
-        visualize_button = QPushButton()
-        visualize_button.setText("Visualize")
-        visualize_button.clicked.connect(lambda: self.is_selection_empty(self.show_visualize_dialog))
-        buttons = [subset_button, analyze_button, visualize_button]
+        buttons_dict = {"Export":self.show_subset_dialog, "Analyze":self.show_analyze_dialog, "Visualize":self.show_visualize_dialog}
 
-        for i in range(len(buttons)):
-            button = buttons[i]
+        for key in buttons_dict:
+            button = QPushButton()
+            button.setText(key)
             buttons_layout.addWidget(button)
+            function = lambda _, f=buttons_dict[key]: self.is_selection_empty(f)
+            button.clicked.connect(function)
 
         outer_layout.addLayout(top_layout)
         outer_layout.addLayout(pbonds_layout)
@@ -167,7 +163,7 @@ class XMAS(ToolInstance):
 
     def show_visualize_dialog(self, pbs):
 
-        from PyQt5.QtWidgets import QDialog, QVBoxLayout, QComboBox, QButtonGroup, QRadioButton, QGridLayout, QDialogButtonBox, QLabel, QLineEdit
+        from PyQt5.QtWidgets import QDialog, QVBoxLayout, QComboBox, QButtonGroup, QCheckBox, QGridLayout, QDialogButtonBox, QLabel, QLineEdit
         from PyQt5.QtGui import QDoubleValidator
 
         self.visualize_dialog = QDialog()
@@ -177,31 +173,25 @@ class XMAS(ToolInstance):
         settings_layout = QGridLayout()
         
         policies = ["Color by distance", "Color by score"]
-        radio_buttons_text = ["Gradient", "Cutoff"]
-        sliders = self.make_sliders(pbs, "Visualize")
+        checkboxes_text = ["Gradient", "Cutoff"]
+        sliders = self.make_sliders(pbs, VisualizeSlider)
+        group = QButtonGroup()
+        group.setExclusive(False)
+        ids = [[a, b] for a in policies for b in checkboxes_text]
 
-        row_index = 0
+        row = 0
         for i in range(len(policies)):
-            settings_layout.addWidget(QLabel(policies[i]), row_index, 0, 1, 2)            
-            radio_group = QButtonGroup(self.visualize_dialog)
-            for text_index in range(len(radio_buttons_text)):
-                text = radio_buttons_text[text_index]
-                button = QRadioButton(text)
-                radio_group.addButton(button)
-                settings_layout.addWidget(button, row_index + 1, text_index)
-                if text_index != 0:
-                    continue
-                button.toggle()
-                slider = sliders[i]
-                settings_layout.addLayout(slider.layout, row_index, 2, 2, 1)
-                widgets = slider.widgets
-                for widget in widgets:
-                    size_policy = widget.sizePolicy()
-                    size_policy.setRetainSizeWhenHidden(True)
-                    widget.setSizePolicy(size_policy)
-                    widget.setVisible(False)     
-                radio_group.buttonClicked.connect(lambda button, s=slider: self.show_slider(button, s))
-            row_index += 2
+            settings_layout.addWidget(QLabel(policies[i]), row, 0, 1, 2)
+            for j in len(checkboxes_text):
+                checkbox = QCheckBox()
+                text = checkboxes_text[i]
+                checkbox.setText(text)
+                group.addButton(checkbox)
+                group.setId(checkbox, i)
+                button_id = ids[i]
+                group.clicked.connect(self.execute_checkbox_function)
+                settings_layout.addWidget(checkbox, row + 1, j)
+        
 
         apply_cancel = QDialogButtonBox(QDialogButtonBox.Cancel | QDialogButtonBox.Apply)        
         apply_cancel.clicked.connect(self.apply_clicked)
@@ -214,6 +204,16 @@ class XMAS(ToolInstance):
         outer_layout.addWidget(apply_cancel)
         self.visualize_dialog.setLayout(outer_layout)
         self.visualize_dialog.show()
+
+
+    def enable_functions(self, button):
+        
+        if button.text() != "Gradient":
+            return
+
+        clicked_group = button.group()
+        for group in self.visualize_dialog.button_groups:
+            if group != 
 
 
     def apply_clicked(self):
@@ -958,7 +958,7 @@ class XMAS(ToolInstance):
             button.setText(key)
             layout.addWidget(button)
             function = buttons_dict[key]
-            button.clicked.connect(lambda _, __, f=function: self.get_names(names_menu, pbs_dict, f))
+            button.clicked.connect(lambda _, f=function: self.get_names(names_menu, pbs_dict, f))
             
         for model in pbs_dict:
             item = QTreeWidgetItem(names_menu)
@@ -1036,7 +1036,7 @@ class XMAS(ToolInstance):
             item.setCheckState(Qt.Unchecked)
             item.setFlags(Qt.NoItemFlags)     
 
-        sliders = self.make_sliders(pbs)
+        sliders = self.make_sliders(pbs, ExportSlider)
         self.distance_slider, self.score_slider = sliders
 
         self.overlap_number = QComboBox()
@@ -1087,10 +1087,10 @@ class XMAS(ToolInstance):
         self.subset_dialog.rejected.connect(lambda: self.display_all(pbs))
 
 
-    def make_sliders(self, pbs, menu="Export"):
+    def make_sliders(self, pbs, cls=None):
 
         maximum_distance = self.max_pseudobond_distance(pbs)
-        distance_slider = Slider("distance", True, maximum_distance, pbs, menu)
+        distance_slider = cls("distance", True, maximum_distance, pbs)
         make_score_slider = True
         for group in pbs.by_group:
             pb = group[1][0]
@@ -1099,9 +1099,9 @@ class XMAS(ToolInstance):
                 break
         if make_score_slider:
             maximum_score = self.get_maximum_score(pbs)
-            score_slider = Slider("score", True, maximum_score, pbs, menu)
+            score_slider = cls("score", True, maximum_score, pbs)
         else:
-            score_slider = Slider("score", False)
+            score_slider = cls("score", False)
         
         sliders = [distance_slider, score_slider]
         for i in range(2):
@@ -1768,7 +1768,8 @@ class ColorScore(ColorKeyModel):
 
 class Slider:
     
-    def __init__(self, value_type="distance", enabled=True, maximum=None, pbs=None, menu="Export"):
+    
+    def __init__(self, value_type="distance", enabled=True, maximum=None, pbs=None):
         
         from PyQt5.QtWidgets import QGridLayout, QLabel, QLineEdit
         from qtrangeslider import QRangeSlider
@@ -1783,38 +1784,15 @@ class Slider:
             title = "Max. XLinkX score"
         label = QLabel(title + ":")
         self.slider = QRangeSlider(Qt.Horizontal)
-        self.setter_min = QLineEdit()
-        self.setter_max = QLineEdit()
+        setter_min = QLineEdit()
+        setter_max = QLineEdit()
         self.maximum = maximum
         
         self.layout.addWidget(label, 0, 0, 1, 4)
         self.layout.addWidget(self.slider, 1, 1, 1, 2)
-        self.layout.addWidget(self.setter_min, 1, 0)
-        self.layout.addWidget(self.setter_max, 1, 3)
+        self.layout.addWidget(setter_min, 1, 0)
+        self.layout.addWidget(setter_max, 1, 3)
         self.layout.setColumnMinimumWidth(1, 300)
-        
-        if not enabled:
-            for i in range(self.layout.count()):
-                widget = self.layout.itemAt(i).widget()
-                widget.setEnabled(False)
-            return
-        
-        self.set_full_range(maximum)
-        signal = self.slider.valueChanged
-        self.slider.valueChanged.connect(lambda: self.display_pseudobonds(value_type, pbs, menu))
-        signal.connect(self.adjust_setters)
-        
-        self.setters = [self.setter_min, self.setter_max]
-        alignments = [Qt.AlignRight, Qt.AlignLeft]
-        texts = ["0", str(maximum)]
-        for i in range(len(self.setters)):
-            setter = self.setters[i]
-            setter.setAlignment(alignments[i])
-            setter.setValidator(QIntValidator())
-            setter.setText(texts[i])
-        # Connecting to 'change_slider_value' in the for-loop does not work
-        self.setter_min.textChanged.connect(lambda: self.change_slider_value(True))
-        self.setter_max.textChanged.connect(lambda: self.change_slider_value(False))
 
         i = self.layout.count()
         self.widgets = [None]*i
@@ -1822,6 +1800,28 @@ class Slider:
             j = i - 1
             self.widgets[j] = self.layout.itemAt(j).widget()
             i -=1
+        
+        if not enabled:
+            for widget in self.widgets:
+                widget.setEnabled(False)
+            return
+        
+        self.set_full_range(maximum)
+        signal = self.slider.valueChanged
+        self.function = None
+        self.slider.valueChanged.connect(lambda: self.within_range(value_type, pbs, self.function))
+        signal.connect(self.adjust_setters)
+        
+        self.setters = [setter_min, setter_max]
+        alignments = [Qt.AlignRight, Qt.AlignLeft]
+        texts = ["0", str(maximum)]
+        minimum = [True, False]
+        for i in range(len(self.setters)):
+            setter = self.setters[i]
+            setter.setAlignment(alignments[i])
+            setter.setValidator(QIntValidator())
+            setter.setText(texts[i])
+            setter.textChanged.connect(lambda text, m=minimum[i]: self.change_slider_value(text, m))
 
 
     def set_full_range(self, maximum):
@@ -1830,7 +1830,7 @@ class Slider:
         self.slider.setValue((0, maximum))
 
         
-    def display_pseudobonds(self, value_type, pbs, menu):
+    def within_range(self, value_type, pbs, function=None):
 
         if value_type == "distance":
             distance_slider = self
@@ -1841,6 +1841,7 @@ class Slider:
 
         distance_range = distance_slider.slider.value()
         score_range = score_slider.slider.value()
+        within_range = {}
             
         for pb in pbs:
             distance = pb.length
@@ -1849,16 +1850,11 @@ class Slider:
             if score_slider.enabled:
                 score = pb.xlinkx_score
                 wrong_score = (score < score_range[0] or score > score_range[1])
-            outside_range = (wrong_distance or wrong_score)
-            if (outside_range and menu == "Export"):
-                pb.display = False
-            elif (outside_range and menu == "Visualize"):
-                pb.color = [255, 0, 0, 255]
-            elif (not outside_range and menu == "Export"):
-                pb.display = True
-            else:
-                pb.color = pb.initial_color
-
+            is_outside_range = (wrong_distance or wrong_score)
+            within_range[pb] = is_outside_range
+            
+        function(within_range)
+    
                 
     def adjust_setters(self):
         
@@ -1869,15 +1865,55 @@ class Slider:
             setter.setText(str(values[i]))
 
             
-    def change_slider_value(self, minimum):
+    def change_slider_value(self, text, minimum):
 
         if minimum:
-            values = (int(self.setter_min.text()), self.slider.value()[1])
+            values = (int(text), self.slider.value()[1])
         else:
-            values = (self.slider.value()[0], int(self.setter_max.text()))
+            values = (self.slider.value()[0], int(text))
   
         self.slider.setValue(values)
 
+
+class ExportSlider(Slider):
+    
+    
+    def __init__(self, value_type="distance", enabled=True, maximum=None, pbs=None):
+        
+        super().__init__(value_type, enabled, maximum, pbs)
+        self.function = self.display_pseudobonds
+        
+    
+    def display_pseudobonds(self, display_dict):
+        
+        for pb in display_dict:
+            is_outside_range = display_dict[pb]
+            if is_outside_range:
+                display = False
+            else:
+                display = True
+            pb.display = display
+
+
+class VisualizeSlider(Slider):
+
+    
+    def __init__(self, value_type="distance", enabled=True, maximum=None, pbs=None):
+        
+        super().__init__(value_type, enabled, maximum, pbs)
+        self.function = self.color_pseudobonds
+        self.button_group = None
+
+        
+    def color_pseudobonds(self, display_dict):
+        
+        for pb in display_dict:
+            is_outside_range = display_dict[pb]
+            if is_outside_range:
+                color = [170, 0, 0, 255]
+            else:
+                color = pb.initial_color
+            pb.color = color
 
 
 from PyQt5.QtWidgets import QStyledItemDelegate
