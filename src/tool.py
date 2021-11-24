@@ -172,26 +172,43 @@ class XMAS(ToolInstance):
         outer_layout = QVBoxLayout()
         settings_layout = QGridLayout()
         
-        policies = ["Color by distance", "Color by score"]
+        self.distance_policy = "distance"
+        self.score_policy = "score"
+        policies = [self.distance_policy, self.score_policy]
         checkboxes_text = ["Gradient", "Cutoff"]
-        sliders = self.make_sliders(pbs, VisualizeSlider)
-        group = QButtonGroup()
-        group.setExclusive(False)
-        ids = [[a, b] for a in policies for b in checkboxes_text]
+        sliders = list(self.make_sliders(pbs, VisualizeSlider))
+        self.visualize_dialog.sliders = dict(zip(policies, sliders))
+        self.visualize_dialog.color_keys = dict(zip(policies, [None] * len(policies)))
+        number_of_checkboxes = len(policies) * len(checkboxes_text)
+        checkboxes = [None] * number_of_checkboxes
+        for i in range(number_of_checkboxes):
+            checkboxes[i] = QCheckBox()
+        id_couplings = [checkboxes[2], sliders[0], checkboxes[0], sliders[1]]
+        functions = [self.disable_other_gradient, self.show_slider] * len(policies)
 
         row = 0
         for i in range(len(policies)):
-            settings_layout.addWidget(QLabel(policies[i]), row, 0, 1, 2)
-            for j in len(checkboxes_text):
-                checkbox = QCheckBox()
-                text = checkboxes_text[i]
+            policy = policies[i]
+            label = "Color by " + policy
+            settings_layout.addWidget(QLabel(label), row, 0, 1, 2)
+            slider = sliders[i]
+            settings_layout.addLayout(slider.layout, row, 2, 2, 1)
+            for j in range(len(checkboxes_text)):
+                index = row + j
+                checkbox = checkboxes[index]
+                text = checkboxes_text[j]
                 checkbox.setText(text)
-                group.addButton(checkbox)
-                group.setId(checkbox, i)
-                button_id = ids[i]
-                group.clicked.connect(self.execute_checkbox_function)
                 settings_layout.addWidget(checkbox, row + 1, j)
-        
+                if not slider.enabled:
+                    checkbox.setEnabled(False)
+                    checkbox.never_enabled = True
+                    continue
+                checkbox.never_enabled = False
+                coupled = id_couplings[index]
+                function = functions[index]
+                checkbox.clicked.connect(lambda checked, c=coupled, f=function: self.execute_checkbox_function(checked, c, f))
+            checkboxes[row].clicked.connect(lambda checked, p=policy: self.color_gradient(checked, pbs, p))
+            row += 2
 
         apply_cancel = QDialogButtonBox(QDialogButtonBox.Cancel | QDialogButtonBox.Apply)        
         apply_cancel.clicked.connect(self.apply_clicked)
@@ -206,14 +223,84 @@ class XMAS(ToolInstance):
         self.visualize_dialog.show()
 
 
-    def enable_functions(self, button):
+    def color_gradient(self, checked, pbs, policy):
+
+        from chimerax.color_key.model import ColorKeyModel
+        from chimerax.core.colors import Colormap
         
-        if button.text() != "Gradient":
+        if not checked:
+            for pb in pbs:
+                pb.color = pb.initial_color
+            if self.visualize_dialog.color_keys[policy] is None:
+                return
+            color_key = self.visualize_dialog.color_keys[policy]
+            color_key.delete()
+            self.visualize_dialog.color_keys[policy] = None
             return
 
-        clicked_group = button.group()
-        for group in self.visualize_dialog.button_groups:
-            if group != 
+        if policy == self.distance_policy:
+            rgbas = ((1, 1/3 , 1, 1), (5/6, 1/2, 5/6, 1), (2/3, 2/3, 2/3, 1), (1/3, 2/3, 5/6, 1), (0, 2/3, 1, 1))
+            slider = self.visualize_dialog.sliders[policy].slider
+            maximum = slider.value()[1]
+            color_range = 0, maximum
+            attribute = "length"
+        elif policy == self.score_policy:
+            rgbas = ((1, 0, 0, 1), (1, 1/2, 0, 1), (1, 1, 0, 1), (1/2, 1, 0, 1), (0, 1, 0, 1))
+            color_range = 0, 200 
+            attribute = "xlinkx_score"
+
+        color_key = ColorKeyModel(self.session)
+        color_key._rgbas_and_labels = self.get_rgbas_and_labels(rgbas, color_range)
+        color_key._ticks = True
+        color_key._tick_thickness = 2
+        color_key._label_offset = -15
+        color_key.name = policy.title() + " gradient"
+        self.session.models.add([color_key])
+        self.visualize_dialog.color_keys[policy] = color_key
+        colors = tuple([rgbas[i] for i in range(len(rgbas)) if i % 2 == 0])
+        cmap = Colormap(None, colors)
+        self.cmap = cmap.linear_range(min(color_range), max(color_range))
+        values = [getattr(pb, attribute) for pb in pbs]
+        print(str(values))
+        rgba8_list = self.cmap.interpolated_rgba8(values)
+        print(str(rgba8_list))
+
+        for i in range(len(pbs)):
+            pbs[i].color = rgba8_list[i]           
+
+    
+    def get_rgbas_and_labels(self, rgbas, color_range):
+
+        minimum = min(color_range)
+        maximum = max(color_range)
+        sum_values = minimum + maximum
+        if not sum_values % 2 == 0:
+            maximum += 1
+        middle = str(int((minimum + maximum)/2))
+        labels = [str(minimum), "", middle, "", str(maximum)]
+        rgbas_and_labels = [(rgbas[i], labels[i]) for i in range(len(labels))]
+
+        return rgbas_and_labels
+
+
+    def execute_checkbox_function(self, checked, coupled, function):
+
+        function(checked, coupled)
+
+
+    def disable_other_gradient(self, checked, checkbox):
+
+        if checkbox.never_enabled:
+            return
+
+        if checked:
+            checkbox.setChecked(False)
+            enabled = False
+        else:
+            enabled = True
+
+
+        checkbox.setEnabled(enabled)
 
 
     def apply_clicked(self):
@@ -227,17 +314,16 @@ class XMAS(ToolInstance):
             pb.color = pb.initial_color
 
     
-    def show_slider(self, button, slider):
+    def show_slider(self, checked, slider):
 
-        cutoff = button.text() == "Cutoff"
         widgets = slider.widgets
         widget = widgets[0]
         visible = widget.isVisible()
 
-        if (visible and not cutoff):
+        if (visible and not checked):
             set_visible = False
             slider.set_full_range(slider.maximum)
-        elif (not visible and cutoff):
+        elif (not visible and checked):
             set_visible = True
         else:
             return
@@ -1569,7 +1655,7 @@ class XMAS(ToolInstance):
 
         for model in self.session.models:
             # Skip all models that are not in the pbonds menu
-            if (not model.name[-3:] == ".pb" or isinstance(model, ColorScore)):
+            if not model.name[-3:] == ".pb":
                 continue
             item = model.item
             if model.selected:
@@ -1722,48 +1808,6 @@ class PrePseudobond:
             is_selflink = True
 
         return is_selflink
-
-
-from chimerax.color_key.model import ColorKeyModel
-
-class ColorScore(ColorKeyModel):
-
-    def __init__(self, session, distances, name):
-
-        super().__init__(session)
-        self._rgbas_and_labels = self.get_rgbas_and_labels(distances)
-        self._ticks = True
-        self._tick_thickness = 2
-        self._label_offset = -15
-        self.name = "Key " + name
-
-
-    def get_rgbas_and_labels(self, distances):
-
-        from chimerax.core.colors import Colormap
-
-        if distances is None:
-            rgbas = [(1,0,0,1), (1,0.5,0,1), (1,1,0,1), (0.5,1,0,1), (0,1,0,1)]
-            labels = ["0", " ", "100", " ", "≥200"]
-        else:
-            rgbas = [(1,1/3,1,1), (5/6,1/2,5/6,1), (2/3,2/3,2/3,1), (1/3,2/3,5/6,1), (0,2/3,1,1)]
-            minimum = distances[0]
-            maximum = distances[1]
-            sum_values = minimum + maximum
-            if not sum_values % 2 == 0:
-                maximum += 1
-            middle = int((minimum + maximum)/2)
-
-            labels = [str(minimum), " ", str(middle), " ", str(maximum)]
-            cmap = Colormap(None, ((1,1/3,1,1), (2/3,2/3,2/3,1), (0,2/3,1,1)))
-            self.cmap = cmap.linear_range(minimum, maximum)
-
-        number_of_labels = len(labels)
-        _rgbas_and_labels = [None] * number_of_labels
-        for i in range(number_of_labels):
-            _rgbas_and_labels[i] = (rgbas[i], labels[i])
-
-        return _rgbas_and_labels
         
 
 class Slider:
@@ -1800,7 +1844,13 @@ class Slider:
             j = i - 1
             self.widgets[j] = self.layout.itemAt(j).widget()
             i -=1
-        
+
+        for widget in self.widgets:
+            size_policy = widget.sizePolicy()
+            size_policy.setRetainSizeWhenHidden(True)
+            widget.setSizePolicy(size_policy)
+            widget.setVisible(False)   
+   
         if not enabled:
             for widget in self.widgets:
                 widget.setEnabled(False)
@@ -1899,10 +1949,12 @@ class VisualizeSlider(Slider):
 
     
     def __init__(self, value_type="distance", enabled=True, maximum=None, pbs=None):
+
+        from PyQt5.QtWidgets import QCheckBox
         
         super().__init__(value_type, enabled, maximum, pbs)
         self.function = self.color_pseudobonds
-        self.button_group = None
+
 
         
     def color_pseudobonds(self, display_dict):
