@@ -57,7 +57,7 @@ class XMAS(ToolInstance):
         cmap = Colormap(None, ((1, 0, 0, 1), (1, 1, 0, 1), (0, 1, 0, 1)))
         self.score_cmap = cmap.linear_range(0, 200)
 
-        self.map_crosslinks(None, ["1"], ["C:/Users/ilsel/Documents/MCLS/Bioinformatics_profile/xmas/FibB_PD.xlsx"])
+        self.map_crosslinks(["1"], ["C:/Users/ilsel/Documents/MCLS/Bioinformatics_profile/xmas/FibB_PD.xlsx"])
 
 
     def _build_ui(self):
@@ -164,7 +164,6 @@ class XMAS(ToolInstance):
     def show_visualize_dialog(self, pbs):
 
         from PyQt5.QtWidgets import QDialog, QVBoxLayout, QComboBox, QButtonGroup, QCheckBox, QGridLayout, QDialogButtonBox, QLabel, QLineEdit
-        from PyQt5.QtGui import QDoubleValidator
 
         self.visualize_dialog = QDialog()
         self.visualize_dialog.setWindowTitle("Visualization settings selected pseudobonds") 
@@ -210,6 +209,8 @@ class XMAS(ToolInstance):
             checkboxes[row].clicked.connect(lambda checked, p=policy: self.color_gradient(checked, pbs, p))
             row += 2
 
+        custom_layout = self.create_custom_layout(pbs)
+
         apply_cancel = QDialogButtonBox(QDialogButtonBox.Cancel | QDialogButtonBox.Apply)        
         apply_cancel.clicked.connect(self.apply_clicked)
         rejected_objects = [self.visualize_dialog, apply_cancel]
@@ -218,9 +219,60 @@ class XMAS(ToolInstance):
         apply_cancel.rejected.connect(self.visualize_dialog.close)
 
         outer_layout.addLayout(settings_layout)
+        outer_layout.addWidget(QLabel(""))
+        outer_layout.addWidget(QLabel("Customize all selected pseudobonds"))
+        outer_layout.addLayout(custom_layout)
         outer_layout.addWidget(apply_cancel)
         self.visualize_dialog.setLayout(outer_layout)
         self.visualize_dialog.show()
+
+
+    def create_custom_layout(self, pbs):
+
+        from chimerax.ui.widgets.color_button import MultiColorButton
+        from PyQt5.QtWidgets import QGridLayout, QLabel, QLineEdit
+        from PyQt5.QtGui import QDoubleValidator
+
+        color_button = MultiColorButton(has_alpha_channel=True, max_size=(16,16))
+
+        def color_button_function(button, attribute):
+            group = self.pb_manager.get_group("Temp")
+            if group.num_pseudobonds > 0:
+                group.clear()
+            for pb in pbs:
+                a1, a2 = pb.atoms
+                group.new_pseudobond(a1, a2)
+            color = group.single_color
+            group.delete()
+            button.set_color(color)
+            button.color_changed.connect(lambda rgba: self.change_pseudobonds_style(rgba, attribute, pbs))
+        
+        def line_edit_function(line_edit, attribute):
+            line_edit.setValidator(QDoubleValidator())
+            line_edit.textChanged.connect(lambda text: self.change_pseudobonds_style(text, attribute, pbs))
+
+        layout = QGridLayout()
+        labels = ["Color", "Dashes", "Radius"]
+        widgets = [color_button, QLineEdit(), QLineEdit()]
+        functions = [color_button_function, line_edit_function, line_edit_function]
+
+        for i in range(len(labels)):
+            label = labels[i]
+            layout.addWidget(QLabel(label), 0, i)
+            widget = widgets[i]
+            layout.addWidget(widget, 1, i)
+            functions[i](widget, label)
+
+        return layout      
+
+
+    def change_pseudobonds_style(self, value, attribute, pbs):
+
+        if attribute != "Color":
+            value = float(value)
+
+        for pb in pbs:
+            setattr(pb, attribute.lower(), value)
 
 
     def color_gradient(self, checked, pbs, policy):
@@ -230,7 +282,10 @@ class XMAS(ToolInstance):
         
         if not checked:
             for pb in pbs:
-                pb.color = pb.initial_color
+                if pb.cutoff:
+                    color = pb.initial_color
+                    pb.color = color
+                    pb.gradient_color = color
             if self.visualize_dialog.color_keys[policy] is None:
                 return
             color_key = self.visualize_dialog.color_keys[policy]
@@ -261,12 +316,15 @@ class XMAS(ToolInstance):
         cmap = Colormap(None, colors)
         self.cmap = cmap.linear_range(min(color_range), max(color_range))
         values = [getattr(pb, attribute) for pb in pbs]
-        print(str(values))
         rgba8_list = self.cmap.interpolated_rgba8(values)
-        print(str(rgba8_list))
 
         for i in range(len(pbs)):
-            pbs[i].color = rgba8_list[i]           
+            pb = pbs[i]
+            if pb.cutoff:
+                continue
+            color = rgba8_list[i]
+            pb.color = color  
+            pb.gradient_color = color
 
     
     def get_rgbas_and_labels(self, rgbas, color_range):
@@ -312,6 +370,14 @@ class XMAS(ToolInstance):
 
         for pb in pbs:
             pb.color = pb.initial_color
+
+        color_keys = self.visualize_dialog.color_keys
+
+        for policy in color_keys:
+            color_key = color_keys[policy]
+            if color_key is None:
+                continue
+            color_key.delete()
 
     
     def show_slider(self, checked, slider):
@@ -368,6 +434,7 @@ class XMAS(ToolInstance):
                 continue
 
             name = names[i] + "_shortest.pb"
+            group = self.get_pseudobonds_model(name)
             peptide_pairs_dict = {}
 
             for pb in pbs_dict[model]:
@@ -376,10 +443,6 @@ class XMAS(ToolInstance):
                     if not pair in peptide_pairs_dict:
                         peptide_pairs_dict[pair] = []
                     peptide_pairs_dict[pair].append(pb)
-            
-            group = self.pb_manager.get_group(name)
-            group.color = [255, 255, 0, 255]
-            group.radius = 0.5
 
             shortest_pbs = []
 
@@ -398,13 +461,13 @@ class XMAS(ToolInstance):
 
             pbs_atoms_dict = self.pbs_atoms(shortest_pbs, find_shortest=True)
             
-            for atoms in list(pbs_atoms_dict.keys()):
-                group.new_pseudobond(atoms[0], atoms[1])
-            
-            self.session.models.add([group])
+            for atoms in pbs_atoms_dict:
+                pb = group.new_pseudobond(atoms[0], atoms[1])
+                xlinkx_scores = pbs_atoms_dict[atoms]
+                pb.xlinkx_score = max(xlinkx_scores)
 
             group_item = self.pbonds_menu.findItems(
-                    name, Qt.MatchExactly, column=0)[0]
+                    group.name, Qt.MatchExactly, column=0)[0]
             group_item.setText(1, model.item.text(1))
 
             i += 1
@@ -578,11 +641,10 @@ class XMAS(ToolInstance):
                 # False. Mapping is performed by a call to the
                 # "map_crosslinks" method
                 if not self.missing_data:
-                    self.map_crosslinks(
-                        checked_items, self.checked_models, checked_files)
+                    self.map_crosslinks(self.checked_models, checked_files)
 
 
-    def map_crosslinks(self, checked_items, checked_models, checked_files):
+    def map_crosslinks(self, checked_models, checked_files):
         
         # The user has selected one or multiple models and evidence
         # files, and clicked the map button: map crosslinked peptides
@@ -867,13 +929,7 @@ class XMAS(ToolInstance):
     def create_pseudobonds_model(self, pbonds, file_path):
 
         name = self.get_short_filename(file_path)
-        group = self.pb_manager.get_group(name)
-        if group.num_pseudobonds > 0:
-            group.clear()
-        self.session.models.add([group])
-        group.radius = 0.5
-        group.color = [255, 255, 0, 255]
-        group.dashes = 8
+        group = self.get_pseudobonds_model(name)
         group.XMAS_made = True
 
         pbs_atoms_dict = self.pbs_atoms(pbonds)
@@ -892,7 +948,31 @@ class XMAS(ToolInstance):
 
         self.write_file(file_path, group, file_type=".pb")
 
-        return name
+        return group.name
+
+
+    def get_pseudobonds_model(self, name):
+        
+        group = self.pb_manager.get_group(name)
+        if group.num_pseudobonds > 0:
+            if "re" not in dir():
+                import re
+            extension = re.search("\(\d+\)", name)
+            if extension is None:
+                extension = ""
+                n = 1
+            else:
+                extension = extension.group(0)
+                n = re.search("(\d+)", extension) + 1
+            new_extension = "(%s).pb" % n
+            name = name.replace(extension + ".pb", new_extension)
+            group = self.pb_manager.get_group(name)
+        self.session.models.add([group])
+        group.radius = 0.5
+        group.color = [255, 255, 0, 255]
+        group.dashes = 8
+
+        return group
 
 
     def create_pb_line(self, pb):
@@ -919,10 +999,12 @@ class XMAS(ToolInstance):
             atoms = sorted([atom1, atom2])
             atoms = tuple(atoms)
             if atoms not in atom_dict.keys():
-                atom_dict[atoms] = []
+                atom_dict[atoms] = set()
             if find_shortest:
-                continue
-            atom_dict[atoms].append(pb.peptide_pair)
+                value = pb.xlinkx_score
+            else:
+                value = pb.peptide_pair
+            atom_dict[atoms].add(value)
 
         return atom_dict
 
@@ -1194,8 +1276,14 @@ class XMAS(ToolInstance):
             slider = sliders[i]
             slider.linked_slider = sliders[i - 1]
 
+        if cls == ExportSlider:
+            return
+
         for pb in pbs:
-            pb.initial_color = pb.color
+            color = pb.color
+            pb.initial_color = color
+            pb.gradient_color = color
+            pb.cutoff = False
 
         return distance_slider, score_slider
 
@@ -1247,7 +1335,7 @@ class XMAS(ToolInstance):
                     continue
                 not_selected.append(pb)
             for pb in not_selected:
-                pbs.remove(pb)
+                all_selected_pbs.remove(pb)
         
         return all_selected_pbs
 
@@ -1818,7 +1906,7 @@ class Slider:
         from PyQt5.QtWidgets import QGridLayout, QLabel, QLineEdit
         from qtrangeslider import QRangeSlider
         from PyQt5.QtCore import Qt
-        from PyQt5.QtGui import QIntValidator
+        from PyQt5.QtGui import QDoubleValidator
         
         self.enabled = enabled
         self.layout = QGridLayout()
@@ -1869,7 +1957,7 @@ class Slider:
         for i in range(len(self.setters)):
             setter = self.setters[i]
             setter.setAlignment(alignments[i])
-            setter.setValidator(QIntValidator())
+            setter.setValidator(QDoubleValidator())
             setter.setText(texts[i])
             setter.textChanged.connect(lambda text, m=minimum[i]: self.change_slider_value(text, m))
 
@@ -1953,18 +2041,19 @@ class VisualizeSlider(Slider):
         from PyQt5.QtWidgets import QCheckBox
         
         super().__init__(value_type, enabled, maximum, pbs)
-        self.function = self.color_pseudobonds
-
+        self.function = self.color_cutoff
 
         
-    def color_pseudobonds(self, display_dict):
+    def color_cutoff(self, display_dict):
         
         for pb in display_dict:
             is_outside_range = display_dict[pb]
             if is_outside_range:
                 color = [170, 0, 0, 255]
+                pb.cutoff = True
             else:
-                color = pb.initial_color
+                color = pb.gradient_color
+                pb.cutoff = False
             pb.color = color
 
 
