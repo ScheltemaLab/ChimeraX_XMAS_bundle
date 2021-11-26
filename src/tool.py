@@ -230,10 +230,14 @@ class XMAS(ToolInstance):
     def create_custom_layout(self, pbs):
 
         from chimerax.ui.widgets.color_button import MultiColorButton
-        from PyQt5.QtWidgets import QGridLayout, QLabel, QLineEdit
-        from PyQt5.QtGui import QDoubleValidator
+        from PyQt5.QtWidgets import QGridLayout, QLabel, QLineEdit, QSpacerItem, QSizePolicy
+        from PyQt5.QtGui import QDoubleValidator, QIntValidator
+        import numpy as np
 
         color_button = MultiColorButton(has_alpha_channel=True, max_size=(16,16))
+
+        pointers = np.array([pb.cpp_pointer for pb in pbs], dtype=np.uintp)
+        pbs = Dashes(pointers)
 
         def color_button_function(button, attribute):
             group = self.pb_manager.get_group("Temp")
@@ -241,38 +245,51 @@ class XMAS(ToolInstance):
                 group.clear()
             for pb in pbs:
                 a1, a2 = pb.atoms
-                group.new_pseudobond(a1, a2)
+                new_pb = group.new_pseudobond(a1, a2)
+                new_pb.color = pb.color
             color = group.single_color
             group.delete()
             button.set_color(color)
             button.color_changed.connect(lambda rgba: self.change_pseudobonds_style(rgba, attribute, pbs))
         
-        def line_edit_function(line_edit, attribute):
+        def radii_edit_function(line_edit, attribute):
             line_edit.setValidator(QDoubleValidator())
-            line_edit.textChanged.connect(lambda text: self.change_pseudobonds_style(text, attribute, pbs))
+            line_edit.setMaximumWidth(50)
+            line_edit.textChanged.connect(lambda text: self.change_pseudobonds_style(text, attribute, pbs, float))
+
+        def dashes_edit_function(line_edit, attribute):
+            line_edit.setValidator(QIntValidator())
+            line_edit.setMaximumWidth(50)
+            line_edit.textChanged.connect(lambda text: self.change_pseudobonds_style(text, attribute, pbs, int))
 
         layout = QGridLayout()
-        labels = ["Color", "Dashes", "Radius"]
+        labels = ["Color","Radius" , "Dashes (changes complete model(s))"]
         widgets = [color_button, QLineEdit(), QLineEdit()]
-        functions = [color_button_function, line_edit_function, line_edit_function]
+        functions = [color_button_function, radii_edit_function, dashes_edit_function]
+        attributes = ["colors", "radii", "dashes"]
+        pbs.initial_values = {}
 
         for i in range(len(labels)):
-            label = labels[i]
-            layout.addWidget(QLabel(label), 0, i)
+            layout.addWidget(QLabel(labels[i]), 0, i)
             widget = widgets[i]
             layout.addWidget(widget, 1, i)
-            functions[i](widget, label)
+            attribute = attributes[i]
+            functions[i](widget, attribute)
+
+        spacer = QSpacerItem(0, 0, QSizePolicy.Expanding)
+        layout.addItem(spacer, layout.rowCount() - 2, layout.columnCount(), 2)
 
         return layout      
 
 
-    def change_pseudobonds_style(self, value, attribute, pbs):
+    def change_pseudobonds_style(self, value, attribute, pbs, convert_function=None):
+       
+        if value == "":
+            return
+        elif convert_function is not None:
+            value = convert_function(value)
 
-        if attribute != "Color":
-            value = float(value)
-
-        for pb in pbs:
-            setattr(pb, attribute.lower(), value)
+        setattr(pbs, attribute, value)
 
 
     def color_gradient(self, checked, pbs, policy):
@@ -384,18 +401,18 @@ class XMAS(ToolInstance):
 
         widgets = slider.widgets
         widget = widgets[0]
-        visible = widget.isVisible()
+        enabled = widget.isEnabled()
 
-        if (visible and not checked):
-            set_visible = False
+        if (enabled and not checked):
+            set_enabled = False
             slider.set_full_range(slider.maximum)
-        elif (not visible and checked):
-            set_visible = True
+        elif (not enabled and checked):
+            set_enabled = True
         else:
             return
 
         for widget in widgets:
-            widget.setVisible(set_visible)
+            widget.setEnabled(set_enabled)
 
 
     def remove_files(self):
@@ -1275,15 +1292,13 @@ class XMAS(ToolInstance):
         for i in range(2):
             slider = sliders[i]
             slider.linked_slider = sliders[i - 1]
-
-        if cls == ExportSlider:
-            return
-
-        for pb in pbs:
-            color = pb.color
-            pb.initial_color = color
-            pb.gradient_color = color
-            pb.cutoff = False
+         
+        if cls == VisualizeSlider:
+            for pb in pbs:
+                color = pb.color
+                pb.initial_color = color
+                pb.gradient_color = color
+                pb.cutoff = False
 
         return distance_slider, score_slider
 
@@ -1931,13 +1946,7 @@ class Slider:
         while i > 0:
             j = i - 1
             self.widgets[j] = self.layout.itemAt(j).widget()
-            i -=1
-
-        for widget in self.widgets:
-            size_policy = widget.sizePolicy()
-            size_policy.setRetainSizeWhenHidden(True)
-            widget.setSizePolicy(size_policy)
-            widget.setVisible(False)   
+            i -=1 
    
         if not enabled:
             for widget in self.widgets:
@@ -2066,3 +2075,26 @@ class NoEditDelegate(QStyledItemDelegate):
 
     def createEditor(self, parent, option, index):
         return None
+
+
+from chimerax.atomic.molarray import Pseudobonds
+
+class Dashes(Pseudobonds):
+
+
+	def __init__(self, pbond_pointers=None):
+
+		super().__init__(pbond_pointers)
+
+
+	@property
+	def dashes(self):
+		return
+
+	
+	@dashes.setter
+	def dashes(self, value):
+
+		groups = self.groups
+		for group in self.groups:
+			group.dashes = value
