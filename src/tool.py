@@ -164,12 +164,16 @@ class XMAS(ToolInstance):
     def show_visualize_dialog(self, pbs):
 
         from PyQt5.QtWidgets import QDialog, QVBoxLayout, QComboBox, QButtonGroup, QCheckBox, QGridLayout, QDialogButtonBox, QLabel, QLineEdit
+        import numpy as np
 
         self.visualize_dialog = QDialog()
         self.visualize_dialog.setWindowTitle("Visualization settings selected pseudobonds") 
 
         outer_layout = QVBoxLayout()
         settings_layout = QGridLayout()
+
+        pointers = np.array([pb.cpp_pointer for pb in pbs], dtype=np.uintp)
+        pbs = Dashes(pointers)
         
         self.distance_policy = "distance"
         self.score_policy = "score"
@@ -212,10 +216,10 @@ class XMAS(ToolInstance):
         custom_layout = self.create_custom_layout(pbs)
 
         apply_cancel = QDialogButtonBox(QDialogButtonBox.Cancel | QDialogButtonBox.Apply)        
-        apply_cancel.clicked.connect(self.apply_clicked)
+        apply_cancel.clicked.connect(lambda button: self.apply_clicked(button, "Apply"))
         rejected_objects = [self.visualize_dialog, apply_cancel]
         for obj in rejected_objects:
-            obj.rejected.connect(lambda: self.reset_colors(pbs))
+            obj.rejected.connect(lambda: self.reset_style(pbs))
         apply_cancel.rejected.connect(self.visualize_dialog.close)
 
         outer_layout.addLayout(settings_layout)
@@ -232,12 +236,8 @@ class XMAS(ToolInstance):
         from chimerax.ui.widgets.color_button import MultiColorButton
         from PyQt5.QtWidgets import QGridLayout, QLabel, QLineEdit, QSpacerItem, QSizePolicy
         from PyQt5.QtGui import QDoubleValidator, QIntValidator
-        import numpy as np
 
         color_button = MultiColorButton(has_alpha_channel=True, max_size=(16,16))
-
-        pointers = np.array([pb.cpp_pointer for pb in pbs], dtype=np.uintp)
-        pbs = Dashes(pointers)
 
         def color_button_function(button, attribute):
             group = self.pb_manager.get_group("Temp")
@@ -267,7 +267,7 @@ class XMAS(ToolInstance):
         widgets = [color_button, QLineEdit(), QLineEdit()]
         functions = [color_button_function, radii_edit_function, dashes_edit_function]
         attributes = ["colors", "radii", "dashes"]
-        pbs.initial_values = {}
+        reset_values = self.visualize_dialog.reset_values = {}
 
         for i in range(len(labels)):
             layout.addWidget(QLabel(labels[i]), 0, i)
@@ -275,11 +275,13 @@ class XMAS(ToolInstance):
             layout.addWidget(widget, 1, i)
             attribute = attributes[i]
             functions[i](widget, attribute)
+            value = getattr(pbs, attribute)
+            reset_values[attribute] = value
 
         spacer = QSpacerItem(0, 0, QSizePolicy.Expanding)
         layout.addItem(spacer, layout.rowCount() - 2, layout.columnCount(), 2)
 
-        return layout      
+        return layout 
 
 
     def change_pseudobonds_style(self, value, attribute, pbs, convert_function=None):
@@ -298,9 +300,9 @@ class XMAS(ToolInstance):
         from chimerax.core.colors import Colormap
         
         if not checked:
-            for pb in pbs:
-                if pb.cutoff:
-                    color = pb.initial_color
+            for i, pb in enumerate(pbs):
+                if not pb.cutoff:
+                    color = self.visualize_dialog.reset_values["colors"][i]
                     pb.color = color
                     pb.gradient_color = color
             if self.visualize_dialog.color_keys[policy] is None:
@@ -337,11 +339,11 @@ class XMAS(ToolInstance):
 
         for i in range(len(pbs)):
             pb = pbs[i]
+            color = rgba8_list[i]
+            pb.gradient_color = color
             if pb.cutoff:
                 continue
-            color = rgba8_list[i]
             pb.color = color  
-            pb.gradient_color = color
 
     
     def get_rgbas_and_labels(self, rgbas, color_range):
@@ -378,15 +380,18 @@ class XMAS(ToolInstance):
         checkbox.setEnabled(enabled)
 
 
-    def apply_clicked(self):
+    def apply_clicked(self, button, text):
         
-        self.visualize_dialog.accept()
+        if button.text() == text:
+            self.visualize_dialog.accept()
 
 
-    def reset_colors(self, pbs):
+    def reset_style(self, pbs):
 
-        for pb in pbs:
-            pb.color = pb.initial_color
+        reset_values = self.visualize_dialog.reset_values
+        for attribute in reset_values:
+            value = reset_values[attribute]
+            setattr(pbs, attribute, value)
 
         color_keys = self.visualize_dialog.color_keys
 
@@ -394,7 +399,7 @@ class XMAS(ToolInstance):
             color_key = color_keys[policy]
             if color_key is None:
                 continue
-            color_key.delete()
+            self.session.models.remove([color_key])
 
     
     def show_slider(self, checked, slider):
@@ -1292,13 +1297,6 @@ class XMAS(ToolInstance):
         for i in range(2):
             slider = sliders[i]
             slider.linked_slider = sliders[i - 1]
-         
-        if cls == VisualizeSlider:
-            for pb in pbs:
-                color = pb.color
-                pb.initial_color = color
-                pb.gradient_color = color
-                pb.cutoff = False
 
         return distance_slider, score_slider
 
@@ -1947,11 +1945,6 @@ class Slider:
             j = i - 1
             self.widgets[j] = self.layout.itemAt(j).widget()
             i -=1 
-   
-        if not enabled:
-            for widget in self.widgets:
-                widget.setEnabled(False)
-            return
         
         self.set_full_range(maximum)
         signal = self.slider.valueChanged
@@ -2029,6 +2022,11 @@ class ExportSlider(Slider):
         
         super().__init__(value_type, enabled, maximum, pbs)
         self.function = self.display_pseudobonds
+   
+        if not enabled:
+            for widget in self.widgets:
+                widget.setEnabled(False)
+            return
         
     
     def display_pseudobonds(self, display_dict):
@@ -2051,6 +2049,9 @@ class VisualizeSlider(Slider):
         
         super().__init__(value_type, enabled, maximum, pbs)
         self.function = self.color_cutoff
+
+        for widget in self.widgets:
+            widget.setEnabled(False)
 
         
     def color_cutoff(self, display_dict):
@@ -2082,19 +2083,22 @@ from chimerax.atomic.molarray import Pseudobonds
 class Dashes(Pseudobonds):
 
 
-	def __init__(self, pbond_pointers=None):
+    def __init__(self, pbond_pointers=None):
 
-		super().__init__(pbond_pointers)
+        super().__init__(pbond_pointers)
+        for pb in self:
+            pb.gradient_color = pb.color
+            pb.cutoff = False
 
 
-	@property
-	def dashes(self):
-		return
+    @property
+    def dashes(self):
+        return
 
 	
-	@dashes.setter
-	def dashes(self, value):
+    @dashes.setter
+    def dashes(self, value):
 
-		groups = self.groups
-		for group in self.groups:
-			group.dashes = value
+        groups = self.groups
+        for group in self.groups:
+            group.dashes = value
