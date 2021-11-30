@@ -166,8 +166,8 @@ class XMAS(ToolInstance):
         from PyQt5.QtWidgets import QDialog, QVBoxLayout, QComboBox, QButtonGroup, QCheckBox, QGridLayout, QDialogButtonBox, QLabel, QLineEdit
         import numpy as np
 
-        self.visualize_dialog = QDialog()
-        self.visualize_dialog.setWindowTitle("Visualization settings selected pseudobonds") 
+        visualize_dialog = self.visualize_dialog = QDialog()
+        visualize_dialog.setWindowTitle("Visualization settings selected pseudobonds") 
 
         outer_layout = QVBoxLayout()
         settings_layout = QGridLayout()
@@ -179,27 +179,24 @@ class XMAS(ToolInstance):
         self.score_policy = "score"
         policies = [self.distance_policy, self.score_policy]
         checkboxes_text = ["Gradient", "Cutoff"]
-        sliders = list(self.make_sliders(pbs, VisualizeSlider))
-        self.visualize_dialog.sliders = dict(zip(policies, sliders))
-        self.visualize_dialog.color_keys = dict(zip(policies, [None] * len(policies)))
-        number_of_checkboxes = len(policies) * len(checkboxes_text)
-        checkboxes = [None] * number_of_checkboxes
-        for i in range(number_of_checkboxes):
+        sliders = list(self.make_sliders(pbs, VisualizeSlider, self.visualize_dialog))
+        visualize_dialog.sliders = dict(zip(policies, sliders))
+        visualize_dialog.color_keys = dict(zip(policies, [None] * len(policies)))
+        checkboxes = [None] * len(policies) * len(checkboxes_text)
+        for i in range(len(checkboxes)):
             checkboxes[i] = QCheckBox()
         id_couplings = [checkboxes[2], sliders[0], checkboxes[0], sliders[1]]
         functions = [self.disable_other_gradient, self.show_slider] * len(policies)
 
         row = 0
-        for i in range(len(policies)):
-            policy = policies[i]
+        for i, policy in enumerate(policies):
             label = "Color by " + policy
             settings_layout.addWidget(QLabel(label), row, 0, 1, 2)
             slider = sliders[i]
             settings_layout.addLayout(slider.layout, row, 2, 2, 1)
-            for j in range(len(checkboxes_text)):
+            for j, text in enumerate(checkboxes_text):
                 index = row + j
                 checkbox = checkboxes[index]
-                text = checkboxes_text[j]
                 checkbox.setText(text)
                 settings_layout.addWidget(checkbox, row + 1, j)
                 if not slider.enabled:
@@ -212,23 +209,22 @@ class XMAS(ToolInstance):
                 checkbox.clicked.connect(lambda checked, c=coupled, f=function: self.execute_checkbox_function(checked, c, f))
             checkboxes[row].clicked.connect(lambda checked, p=policy: self.color_gradient(checked, pbs, p))
             row += 2
-
         custom_layout = self.create_custom_layout(pbs)
 
         apply_cancel = QDialogButtonBox(QDialogButtonBox.Cancel | QDialogButtonBox.Apply)        
         apply_cancel.clicked.connect(lambda button: self.apply_clicked(button, "Apply"))
-        rejected_objects = [self.visualize_dialog, apply_cancel]
+        rejected_objects = [visualize_dialog, apply_cancel]
         for obj in rejected_objects:
             obj.rejected.connect(lambda: self.reset_style(pbs))
-        apply_cancel.rejected.connect(self.visualize_dialog.close)
+        apply_cancel.rejected.connect(visualize_dialog.close)
 
         outer_layout.addLayout(settings_layout)
         outer_layout.addWidget(QLabel(""))
-        outer_layout.addWidget(QLabel("Customize all selected pseudobonds"))
+        outer_layout.addWidget(QLabel("Customize pseudobonds display style"))
         outer_layout.addLayout(custom_layout)
         outer_layout.addWidget(apply_cancel)
-        self.visualize_dialog.setLayout(outer_layout)
-        self.visualize_dialog.show()
+        visualize_dialog.setLayout(outer_layout)
+        visualize_dialog.show()
 
 
     def create_custom_layout(self, pbs):
@@ -238,83 +234,128 @@ class XMAS(ToolInstance):
         from PyQt5.QtGui import QDoubleValidator, QIntValidator
 
         color_button = MultiColorButton(has_alpha_channel=True, max_size=(16,16))
+        color_button2 = MultiColorButton(has_alpha_channel=True, max_size=(16,16))
 
-        def color_button_function(button, attribute):
+        visualize_dialog = self.visualize_dialog
+
+        def color_button_function(button, attribute, row_name, function):
             group = self.pb_manager.get_group("Temp")
-            if group.num_pseudobonds > 0:
-                group.clear()
-            for pb in pbs:
-                a1, a2 = pb.atoms
-                new_pb = group.new_pseudobond(a1, a2)
-                new_pb.color = pb.color
-            color = group.single_color
-            group.delete()
+            if row_name == visualize_dialog.row_names[0]:
+                if group.num_pseudobonds > 0:
+                    group.clear()
+                for pb in pbs:
+                    a1, a2 = pb.atoms
+                    new_pb = group.new_pseudobond(a1, a2)
+                    new_pb.color = pb.color
+                color = group.single_color
+                group.delete()
+            elif row_name == visualize_dialog.row_names[1]:
+                color = visualize_dialog.custom_values[row_name][attribute][0]
             button.set_color(color)
-            button.color_changed.connect(lambda rgba: self.change_pseudobonds_style(rgba, attribute, pbs))
+            button.color_changed.connect(lambda rgba: function(rgba, attribute, pbs, None, row_name))
         
-        def radii_edit_function(line_edit, attribute):
+        def radii_edit_function(line_edit, attribute, row_name, function):
             line_edit.setValidator(QDoubleValidator())
             line_edit.setMaximumWidth(50)
-            line_edit.textChanged.connect(lambda text: self.change_pseudobonds_style(text, attribute, pbs, float))
+            line_edit.textChanged.connect(lambda text: function(text, attribute, pbs, float, row_name))
 
-        def dashes_edit_function(line_edit, attribute):
+        def dashes_edit_function(line_edit, attribute, row_name, function):
             line_edit.setValidator(QIntValidator())
             line_edit.setMaximumWidth(50)
-            line_edit.textChanged.connect(lambda text: self.change_pseudobonds_style(text, attribute, pbs, int))
+            line_edit.textChanged.connect(lambda text: function(text, attribute, pbs, int, row_name))
 
         layout = QGridLayout()
-        labels = ["Color","Radius" , "Dashes (changes complete model(s))"]
-        widgets = [color_button, QLineEdit(), QLineEdit()]
+        labels = ["Color", "Radius", "Dashes (changes complete model(s))"]
+        for i, label in enumerate(labels):
+            layout.addWidget(QLabel(label), 0, i + 1)                    
+        row_names = visualize_dialog.row_names = ["Main", "Cutoff"]
+        widget_rows = {
+            row_names[0]: [color_button, QLineEdit(), QLineEdit()], 
+            row_names[1]: [color_button2, QLineEdit(), QLineEdit()]
+            }
         functions = [color_button_function, radii_edit_function, dashes_edit_function]
-        attributes = ["colors", "radii", "dashes"]
-        reset_values = self.visualize_dialog.reset_values = {}
+        attributes = visualize_dialog.attributes = {"color":"colors", "radius":"radii", "dashes":"dashes"}
+        reset_values = visualize_dialog.reset_values = {}
+        custom_values = visualize_dialog.custom_values = {}
+        cutoff_values = [[170, 0, 0, 255], 0.5]
 
-        for i in range(len(labels)):
-            layout.addWidget(QLabel(labels[i]), 0, i)
-            widget = widgets[i]
-            layout.addWidget(widget, 1, i)
-            attribute = attributes[i]
-            functions[i](widget, attribute)
-            value = getattr(pbs, attribute)
-            reset_values[attribute] = value
+        for i, row_name in enumerate(widget_rows):
+            row = i + 1
+            layout.addWidget(QLabel(row_name + ":"), row, 0)
+            custom_values[row_name] = {}
+            widgets = widget_rows[row_name]
+            for j, widget in enumerate(widgets):
+                attribute = list(attributes.keys())[j]
+                if (row_name == row_names[1] and attribute == "dashes"):
+                    break
+                col = j + 1
+                layout.addWidget(widget, row, col)
+                if row_name == row_names[0]:
+                    reset_attribute = attributes[attribute]
+                    value = getattr(pbs, reset_attribute)
+                    reset_values[attribute] = value
+                    custom_values[row_name][attribute] = value
+                else:
+                    custom_values[row_name][attribute] = [cutoff_values[j]] * len(pbs)
+                functions[j](widget, attribute, row_name, self.change_pseudobonds_style)
 
         spacer = QSpacerItem(0, 0, QSizePolicy.Expanding)
         layout.addItem(spacer, layout.rowCount() - 2, layout.columnCount(), 2)
 
+        print(str(custom_values))
+
         return layout 
 
 
-    def change_pseudobonds_style(self, value, attribute, pbs, convert_function=None):
+    def change_pseudobonds_style(self, value, attribute, pbs, convert_function=None, row_name=""):
        
-        if value == "":
+        if str(value) == "":
             return
+
         elif convert_function is not None:
             value = convert_function(value)
 
-        setattr(pbs, attribute, value)
+        if attribute == list(self.visualize_dialog.attributes.keys())[2]:
+            setattr(pbs, attribute, value)
+        else:
+            row_names = self.visualize_dialog.row_names
+            is_cutoff = {row_names[0]: False, row_names[1]: True}
+            self.visualize_dialog.custom_values[row_name][attribute] = [value] * len(pbs)
+            for pb in pbs:
+                if not pb.cutoff == is_cutoff[row_name]:
+                    continue
+                setattr(pb, attribute, value)
 
 
     def color_gradient(self, checked, pbs, policy):
 
         from chimerax.color_key.model import ColorKeyModel
         from chimerax.core.colors import Colormap
+
+        dialog = self.visualize_dialog
+        key1 = dialog.row_names[0]
+        print(key1)
+        key2 = list(dialog.attributes.keys())[0]
+        print(key2)
+
+        print(str(dialog.reset_values))
         
         if not checked:
             for i, pb in enumerate(pbs):
                 if not pb.cutoff:
-                    color = self.visualize_dialog.reset_values["colors"][i]
+                    color = dialog.reset_values[key2][i]
                     pb.color = color
-                    pb.gradient_color = color
-            if self.visualize_dialog.color_keys[policy] is None:
+                    dialog.custom_values[key1][key2][i] = color
+            if dialog.color_keys[policy] is None:
                 return
-            color_key = self.visualize_dialog.color_keys[policy]
+            color_key = dialog.color_keys[policy]
             color_key.delete()
-            self.visualize_dialog.color_keys[policy] = None
+            dialog.color_keys[policy] = None
             return
 
         if policy == self.distance_policy:
             rgbas = ((1, 1/3 , 1, 1), (5/6, 1/2, 5/6, 1), (2/3, 2/3, 2/3, 1), (1/3, 2/3, 5/6, 1), (0, 2/3, 1, 1))
-            slider = self.visualize_dialog.sliders[policy].slider
+            slider = dialog.sliders[policy].slider
             maximum = slider.value()[1]
             color_range = 0, maximum
             attribute = "length"
@@ -330,20 +371,23 @@ class XMAS(ToolInstance):
         color_key._label_offset = -15
         color_key.name = policy.title() + " gradient"
         self.session.models.add([color_key])
-        self.visualize_dialog.color_keys[policy] = color_key
-        colors = tuple([rgbas[i] for i in range(len(rgbas)) if i % 2 == 0])
+        dialog.color_keys[policy] = color_key
+        colors = tuple([rgba for i, rgba in enumerate(rgbas) if i % 2 == 0])
         cmap = Colormap(None, colors)
         self.cmap = cmap.linear_range(min(color_range), max(color_range))
         values = [getattr(pb, attribute) for pb in pbs]
         rgba8_list = self.cmap.interpolated_rgba8(values)
 
-        for i in range(len(pbs)):
-            pb = pbs[i]
+        for i, pb in enumerate(pbs):
             color = rgba8_list[i]
-            pb.gradient_color = color
+            dialog.custom_values[key1][key2][i] = color
+            print(str(dialog.reset_values))  
             if pb.cutoff:
                 continue
-            pb.color = color  
+            pb.color = color
+
+        print(str(self.visualize_dialog.reset_values))
+
 
     
     def get_rgbas_and_labels(self, rgbas, color_range):
@@ -355,7 +399,7 @@ class XMAS(ToolInstance):
             maximum += 1
         middle = str(int((minimum + maximum)/2))
         labels = [str(minimum), "", middle, "", str(maximum)]
-        rgbas_and_labels = [(rgbas[i], labels[i]) for i in range(len(labels))]
+        rgbas_and_labels = [(rgba, labels[i]) for i, rgba in enumerate(rgbas)]
 
         return rgbas_and_labels
 
@@ -535,11 +579,9 @@ class XMAS(ToolInstance):
 
     def get_plotting_data(self, pbs_dict, distance=True):
 
-        number_of_groups = len(pbs_dict)
-        values = [None]*number_of_groups
+        values = [None] * len(pbs_dict)
 
-        for i in range(number_of_groups):
-            model = list(pbs_dict.keys())[i]
+        for i, model in enumerate(pbs_dict):
             pbs = pbs_dict[model]
             if distance:
                 values[i] = [pb.length for pb in pbs]
@@ -654,10 +696,9 @@ class XMAS(ToolInstance):
                 self.checked_models = checked_items
                 self.missing_data = False
             elif selector_type == "file":
-                number_of_checked_files = len(checked_items)
-                checked_files = [None]*number_of_checked_files
-                for i in range(number_of_checked_files):
-                    checked_files[i] = self.evidence_files[checked_items[i]]
+                checked_files = [None] * len(checked_items)
+                for i, item in enumerate(checked_items):
+                    checked_files[i] = self.evidence_files[item]
                 # If no models have been selected, mapping should not
                 # be performed. Therefore, "missing_data" has to be
                 # False. Mapping is performed by a call to the
@@ -675,9 +716,7 @@ class XMAS(ToolInstance):
         from PyQt5.QtCore import Qt
 
         # Each checked file is mapped to all checked models
-        for j in range(len(checked_files)):
-
-            evidence_file = checked_files[j]
+        for j, evidence_file in enumerate(checked_files):
 
             # Display bold log message to signify which file is being
             # mapped
@@ -770,8 +809,7 @@ class XMAS(ToolInstance):
                     chain_sequence = chain.characters
                     nonetype_positions = []
                     residues = chain.residues
-                    for i in range(len(residues)):
-                        residue = residues[i]
+                    for i, residue in enumerate(residues):
                         if (residue is None 
                                 and not first_residue_number_found):
                             preceding_nonetypes += 1
@@ -1009,11 +1047,9 @@ class XMAS(ToolInstance):
 
     
     def pbs_atoms(self, pbs, find_shortest=False):
-        
-        length = len(pbs)
+
         atom_dict = {}    
-        for i in range(length):
-            pb = pbs[i]
+        for i, pb in enumerate(pbs):
             if not find_shortest:
                 atom1, atom2 = pb.atom1, pb.atom2
             else:
@@ -1081,15 +1117,14 @@ class XMAS(ToolInstance):
         else:
             pbs = group
 
-        number_of_pbs = len(pbs)
-        lines = [None] * number_of_pbs
+        lines = [None] * len(pbs)
         if (file_type == ".pb" or file_type == ".pb overlapping"):
-            for i in range(number_of_pbs):
+            for i, pb in enumerate(pbs):
                 pb = pbs[i]
                 lines[i] = pb.line        
         elif file_type == "export":
-            for i in range(number_of_pbs):
-                lines[i] = pbs[i]
+            for i, pb in enumerate(pbs):
+                lines[i] = pb
 
         lines_deduplicated = list(self.deduplicate(lines))
 
@@ -1226,7 +1261,7 @@ class XMAS(ToolInstance):
             item.setCheckState(Qt.Unchecked)
             item.setFlags(Qt.NoItemFlags)     
 
-        sliders = self.make_sliders(pbs, ExportSlider)
+        sliders = self.make_sliders(pbs, ExportSlider, _)
         self.distance_slider, self.score_slider = sliders
 
         self.overlap_number = QComboBox()
@@ -1277,10 +1312,10 @@ class XMAS(ToolInstance):
         self.subset_dialog.rejected.connect(lambda: self.display_all(pbs))
 
 
-    def make_sliders(self, pbs, cls=None):
+    def make_sliders(self, pbs, cls=None, dialog=None):
 
         maximum_distance = self.max_pseudobond_distance(pbs)
-        distance_slider = cls("distance", True, maximum_distance, pbs)
+        distance_slider = cls("distance", True, maximum_distance, pbs, dialog)
         make_score_slider = True
         for group in pbs.by_group:
             pb = group[1][0]
@@ -1289,13 +1324,12 @@ class XMAS(ToolInstance):
                 break
         if make_score_slider:
             maximum_score = self.get_maximum_score(pbs)
-            score_slider = cls("score", True, maximum_score, pbs)
+            score_slider = cls("score", True, maximum_score, pbs, dialog)
         else:
             score_slider = cls("score", False)
         
         sliders = [distance_slider, score_slider]
-        for i in range(2):
-            slider = sliders[i]
+        for i, slider in enumerate(sliders):
             slider.linked_slider = sliders[i - 1]
 
         return distance_slider, score_slider
@@ -1398,13 +1432,15 @@ class XMAS(ToolInstance):
             models.append(item.model)
             model_iterator += 1
 
-        minimum_distance = int(self.distance_slider.setter_min.text())
-        maximum_distance = int(self.distance_slider.setter_max.text())
+        [setter_min, setter_max] = self.distance_slider.setters
+
+        minimum_distance = int(setter_min.text())
+        maximum_distance = int(setter_max.text())
 
         def get_pass(pb):
 
-            minimum_score = int(self.score_slider.setter_min.text())
-            maximum_score = int(self.score_slider.setter_max.text())
+            minimum_score = int(self.score_slider.setters[0].text())
+            maximum_score = int(self.score_slider.setters[1].text())
             score = pb.xlinkx_score
 
             if (score < minimum_score or score > maximum_score):
@@ -1506,8 +1542,7 @@ class XMAS(ToolInstance):
         file_path = re.search("[^.]+", file_path).group(0)
         extensions = [".pb", ".txt"]
 
-        for i in range(len(lists)):
-            lst = lists[i]
+        for i, lst in enumerate(lists):
             if lst is None:
                 continue
             current_path = file_path + extensions[i]
@@ -1548,10 +1583,8 @@ class XMAS(ToolInstance):
             models_layout.addLayout(layout)
         
         distance_options = ["Minimum", "Maximum"]
-        number_of_options = len(distance_options)
-        line_edits = [None] * number_of_options
-        for i in range(number_of_options):
-            distance = distance_options[i]
+        line_edits = [None] * len(distance_options)
+        for i, distance in enumerate(distance_options):
             label = QLabel(distance + " distance:")
             distances_layout.addWidget(label, i, 0)
             line_edit = QLineEdit()
@@ -1563,18 +1596,15 @@ class XMAS(ToolInstance):
 
             chains_keys = ["Fixed", "Scanning"]
             chains = {}
-            for i in range(len(groups)):
-                group = groups[i]
+            for i, group in enumerate(groups):
                 model = group.checkedButton().model
                 key = chains_keys[i]
                 chains[key] = model    
 
-            distances_keys = distance_options
             distances = {}
-            for i in range(number_of_options):
-                key = distances_keys[i]
+            for i, distance in enumerate(distance_options):
                 value = line_edits[i]
-                distances[key] = value
+                distances[distance] = value
 
             self.create_disvis_input(chains, distances, pseudobonds, pb_lines)
             self.subset_dialog.close()
@@ -1601,11 +1631,9 @@ class XMAS(ToolInstance):
 
         def write_line(atom1, atom2, sort=False):
             atoms = [atom1, atom2]
-            number_of_atoms = len(atoms)
-            atom_strings = [None] * number_of_atoms
+            atom_strings = [None] * len(atoms)
             replace_with_space = [":", "@"]
-            for i in range(number_of_atoms):
-                atom = atoms[i]
+            for i, atom in enumerate(number_of_atoms):
                 string = re.search("/.+", atom.string(style="command line")).group(0)
                 string = string.replace("/", "")                
                 for character in replace_with_space:
@@ -1632,12 +1660,12 @@ class XMAS(ToolInstance):
                     continue
                 atom1, atom2 = pb.atoms
                 atoms = [atom1, atom2]
-                for i in range(len(atoms)):
-                    atoms[i].chain = object()
+                for atom in atoms:
+                    atom.chain = object()
                     for chain in chains:
                         current_chain = chains[chain]
-                        if atoms[i] in current_chain.atoms:
-                            atoms[i].chain = current_chain
+                        if atom in current_chain.atoms:
+                            atom.chain = current_chain
                 if (atoms[0].chain == chains["Fixed"] and atoms[1].chain == chains["Scanning"]):
                     lines.append(write_line(atom1, atom2))
                 elif (atoms[0].chain == chains["Scanning"] and atoms[1].chain == chains["Fixed"]):
@@ -1956,8 +1984,7 @@ class Slider:
         alignments = [Qt.AlignRight, Qt.AlignLeft]
         texts = ["0", str(maximum)]
         minimum = [True, False]
-        for i in range(len(self.setters)):
-            setter = self.setters[i]
+        for i, setter in enumerate(self.setters):
             setter.setAlignment(alignments[i])
             setter.setValidator(QDoubleValidator())
             setter.setText(texts[i])
@@ -2000,8 +2027,7 @@ class Slider:
         
         values = self.slider.value()
         
-        for i in range(len(values)):
-            setter = self.setters[i]
+        for i, setter in enumerate(self.setters):
             setter.setText(str(values[i]))
 
             
@@ -2018,7 +2044,7 @@ class Slider:
 class ExportSlider(Slider):
     
     
-    def __init__(self, value_type="distance", enabled=True, maximum=None, pbs=None):
+    def __init__(self, value_type="distance", enabled=True, maximum=None, pbs=None, *args):
         
         super().__init__(value_type, enabled, maximum, pbs)
         self.function = self.display_pseudobonds
@@ -2043,28 +2069,32 @@ class ExportSlider(Slider):
 class VisualizeSlider(Slider):
 
     
-    def __init__(self, value_type="distance", enabled=True, maximum=None, pbs=None):
+    def __init__(self, value_type="distance", enabled=True, maximum=None, pbs=None, dialog=None):
 
         from PyQt5.QtWidgets import QCheckBox
         
         super().__init__(value_type, enabled, maximum, pbs)
-        self.function = self.color_cutoff
+        self.function = self.cutoff_style
+        self.dialog = dialog
+        self.attributes = ["color", "radius"]
 
         for widget in self.widgets:
             widget.setEnabled(False)
 
         
-    def color_cutoff(self, display_dict):
+    def cutoff_style(self, display_dict):
+
+        custom_values = self.dialog.custom_values
         
-        for pb in display_dict:
+        for i, pb in enumerate(display_dict):
             is_outside_range = display_dict[pb]
-            if is_outside_range:
-                color = [170, 0, 0, 255]
-                pb.cutoff = True
-            else:
-                color = pb.gradient_color
-                pb.cutoff = False
-            pb.color = color
+            pb.cutoff = is_outside_range
+            key = list(custom_values.keys())[is_outside_range]
+            settings = custom_values[key]
+            for attribute in self.attributes:
+                value = settings[attribute][i]
+                setattr(pb, attribute, value)
+
 
 
 from PyQt5.QtWidgets import QStyledItemDelegate
@@ -2093,12 +2123,17 @@ class Dashes(Pseudobonds):
 
     @property
     def dashes(self):
-        return
+
+        return [group.dashes for group in self.groups]
 
 	
     @dashes.setter
     def dashes(self, value):
 
         groups = self.groups
-        for group in self.groups:
-            group.dashes = value
+
+        if not isinstance(value, list):
+            value = [value] * len(groups)
+
+        for i, group in enumerate(groups):
+            group.dashes = value[i]
