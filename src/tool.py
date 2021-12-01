@@ -57,8 +57,6 @@ class XMAS(ToolInstance):
         cmap = Colormap(None, ((1, 0, 0, 1), (1, 1, 0, 1), (0, 1, 0, 1)))
         self.score_cmap = cmap.linear_range(0, 200)
 
-        self.map_crosslinks(["1"], ["C:/Users/ilsel/Documents/MCLS/Bioinformatics_profile/xmas/FibB_PD.xlsx"])
-
 
     def _build_ui(self):
 
@@ -312,8 +310,6 @@ class XMAS(ToolInstance):
         spacer = QSpacerItem(0, 0, QSizePolicy.Expanding)
         layout.addItem(spacer, layout.rowCount() - 2, layout.columnCount(), 2)
 
-        print(str(custom_values))
-
         return layout 
 
 
@@ -347,8 +343,6 @@ class XMAS(ToolInstance):
         print(key1)
         key2 = list(dialog.attributes.keys())[0]
         print(key2)
-
-        print(str(dialog.reset_values))
         
         if not checked:
             for i, pb in enumerate(pbs):
@@ -391,13 +385,9 @@ class XMAS(ToolInstance):
         for i, pb in enumerate(pbs):
             color = rgba8_list[i]
             dialog.custom_values[key1][key2][i] = color
-            print(str(dialog.reset_values))  
             if pb.cutoff:
                 continue
             pb.color = color
-
-        print(str(self.visualize_dialog.reset_values))
-
 
     
     def get_rgbas_and_labels(self, rgbas, color_range):
