@@ -128,7 +128,7 @@ class XMAS(ToolInstance):
         pbonds_layout.addWidget(QLabel("Crosslink models"))
         pbonds_layout.addWidget(self.pbonds_menu)
 
-        buttons_dict = {"Export":self.show_subset_dialog, "Analyze":self.show_analyze_dialog, "Visualize":self.show_visualize_dialog}
+        buttons_dict = {"Export": self.show_subset_dialog, "Analyze": self.show_analyze_dialog, "Visualize": self.show_visualize_dialog}
 
         for key in buttons_dict:
             button = QPushButton()
@@ -136,6 +136,10 @@ class XMAS(ToolInstance):
             buttons_layout.addWidget(button)
             function = lambda _, f=buttons_dict[key]: self.is_selection_empty(f)
             button.clicked.connect(function)
+
+        integrate_button = QPushButton("Integrate")
+        buttons_layout.addWidget(integrate_button)
+        integrate_button.clicked.connect(lambda: self.show_integrate_dialog)
 
         outer_layout.addLayout(top_layout)
         outer_layout.addLayout(pbonds_layout)
@@ -157,6 +161,13 @@ class XMAS(ToolInstance):
         # Add models open in session to the window with the "add_models"
         # method 
         self.add_models(self.session.models)
+
+
+    def show_integrate_dialog(self):
+
+        from .z_score import ZScoreSelector
+
+        z_selector = ZScoreSelector()
 
 
     def show_visualize_dialog(self, pbs):
