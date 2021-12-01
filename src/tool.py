@@ -275,14 +275,27 @@ class XMAS(ToolInstance):
             }
         functions = [color_button_function, radii_edit_function, dashes_edit_function]
         attributes = visualize_dialog.attributes = {"color":"colors", "radius":"radii", "dashes":"dashes"}
-        reset_values = visualize_dialog.reset_values = {}
-        custom_values = visualize_dialog.custom_values = {}
         cutoff_values = [[170, 0, 0, 255], 0.5]
 
+        # The next part is inelegant, but at least it works now.
+                
+        custom_values = visualize_dialog.custom_values = {}
+        for row_name in widget_rows:
+            custom_values[row_name] = {}
+            for i, attribute in enumerate(attributes):
+                if attribute == "dashes":
+                    break
+                if row_name == row_names[0]:
+                    custom_attribute = attributes[attribute]
+                    value = getattr(pbs, custom_attribute)
+                else:
+                    value = [cutoff_values[i]] * len(pbs)
+                custom_values[row_name][attribute] = value
+
+        reset_values = visualize_dialog.reset_values = {}
         for i, row_name in enumerate(widget_rows):
             row = i + 1
             layout.addWidget(QLabel(row_name + ":"), row, 0)
-            custom_values[row_name] = {}
             widgets = widget_rows[row_name]
             for j, widget in enumerate(widgets):
                 attribute = list(attributes.keys())[j]
@@ -294,9 +307,6 @@ class XMAS(ToolInstance):
                     reset_attribute = attributes[attribute]
                     value = getattr(pbs, reset_attribute)
                     reset_values[attribute] = value
-                    custom_values[row_name][attribute] = value
-                else:
-                    custom_values[row_name][attribute] = [cutoff_values[j]] * len(pbs)
                 functions[j](widget, attribute, row_name, self.change_pseudobonds_style)
 
         spacer = QSpacerItem(0, 0, QSizePolicy.Expanding)
@@ -443,7 +453,7 @@ class XMAS(ToolInstance):
             color_key = color_keys[policy]
             if color_key is None:
                 continue
-            self.session.models.remove([color_key])
+            color_key.delete()
 
     
     def show_slider(self, checked, slider):
@@ -1261,7 +1271,7 @@ class XMAS(ToolInstance):
             item.setCheckState(Qt.Unchecked)
             item.setFlags(Qt.NoItemFlags)     
 
-        sliders = self.make_sliders(pbs, ExportSlider, _)
+        sliders = self.make_sliders(pbs, ExportSlider)
         self.distance_slider, self.score_slider = sliders
 
         self.overlap_number = QComboBox()
