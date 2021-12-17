@@ -64,9 +64,8 @@ class XMAS(ToolInstance):
  
         from PyQt5.QtWidgets import (
             QVBoxLayout, QGridLayout, QHBoxLayout, QTreeWidget, 
-            QAbstractItemView, QPushButton, QLabel, QCheckBox, QComboBox, QRadioButton, QButtonGroup, QLineEdit
+            QAbstractItemView, QPushButton, QLabel
             )
-        from PyQt5.QtGui import QDoubleValidator
         
         outer_layout = QVBoxLayout()
         top_layout = QGridLayout()
@@ -137,9 +136,9 @@ class XMAS(ToolInstance):
             function = lambda _, f=buttons_dict[key]: self.is_selection_empty(f)
             button.clicked.connect(function)
 
-        integrate_button = QPushButton("Integrate")
-        buttons_layout.addWidget(integrate_button)
-        integrate_button.clicked.connect(lambda: self.show_integrate_dialog)
+        self.integrate_button = QPushButton("Integrate")
+        buttons_layout.addWidget(self.integrate_button)
+        self.integrate_button.clicked.connect(self.show_integrate_dialog)
 
         outer_layout.addLayout(top_layout)
         outer_layout.addLayout(pbonds_layout)
@@ -164,15 +163,15 @@ class XMAS(ToolInstance):
 
 
     def show_integrate_dialog(self):
-
+        
         from .z_score import ZScoreSelector
 
-        z_selector = ZScoreSelector()
+        ZScoreSelector(self.session)
 
 
     def show_visualize_dialog(self, pbs):
 
-        from PyQt5.QtWidgets import QDialog, QVBoxLayout, QComboBox, QButtonGroup, QCheckBox, QGridLayout, QDialogButtonBox, QLabel, QLineEdit
+        from PyQt5.QtWidgets import QDialog, QVBoxLayout, QCheckBox, QGridLayout, QDialogButtonBox, QLabel
         import numpy as np
 
         visualize_dialog = self.visualize_dialog = QDialog()
@@ -580,10 +579,10 @@ class XMAS(ToolInstance):
         distances = self.get_plotting_data(pbs_dict)    
 
         sns.set(style="whitegrid")
-        ax = sns.boxenplot(data=distances, orient="h")
-        ax = sns.stripplot(data=distances, orient="h", size = 4, color = "gray")
+        sns.boxenplot(data=distances, orient="h")
+        sns.stripplot(data=distances, orient="h", size = 4, color = "gray")
         plt.xlabel("Distance (Å)")
-        yticks = plt.yticks(plt.yticks()[0], names)
+        plt.yticks(plt.yticks()[0], names)
         plt.tight_layout()
         plt.show()
 
@@ -1411,7 +1410,7 @@ class XMAS(ToolInstance):
 
     def export_subset(self, pseudobonds, checkboxes):
 
-        from PyQt5.QtWidgets import QTreeWidgetItemIterator, QFileDialog
+        from PyQt5.QtWidgets import QTreeWidgetItemIterator
         from PyQt5.QtCore import Qt
 
         checked = True
@@ -1644,7 +1643,7 @@ class XMAS(ToolInstance):
             atoms = [atom1, atom2]
             atom_strings = [None] * len(atoms)
             replace_with_space = [":", "@"]
-            for i, atom in enumerate(number_of_atoms):
+            for i, atom in enumerate(atoms):
                 string = re.search("/.+", atom.string(style="command line")).group(0)
                 string = string.replace("/", "")                
                 for character in replace_with_space:
@@ -2081,8 +2080,6 @@ class VisualizeSlider(Slider):
 
     
     def __init__(self, value_type="distance", enabled=True, maximum=None, pbs=None, dialog=None):
-
-        from PyQt5.QtWidgets import QCheckBox
         
         super().__init__(value_type, enabled, maximum, pbs)
         self.function = self.cutoff_style
