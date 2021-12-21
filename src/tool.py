@@ -139,6 +139,9 @@ class XMAS(ToolInstance):
         self.integrate_button = QPushButton("Integrate")
         buttons_layout.addWidget(self.integrate_button)
         self.integrate_button.clicked.connect(self.show_integrate_dialog)
+        # For testing:
+        # self.show_integrate_dialog()
+        # End for testing
 
         outer_layout.addLayout(top_layout)
         outer_layout.addLayout(pbonds_layout)
