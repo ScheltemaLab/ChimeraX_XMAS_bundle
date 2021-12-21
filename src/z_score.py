@@ -1,4 +1,5 @@
-from PyQt5.QtWidgets import QLabel, QLineEdit, QPushButton, QDialogButtonBox, QHBoxLayout, QVBoxLayout, QFileDialog
+from PyQt5.QtWidgets import QLabel, QLineEdit, QPushButton, QDialogButtonBox, QHBoxLayout, QVBoxLayout, QFileDialog, QSizePolicy
+from PyQt5.QtCore import Qt
 from pathlib import Path
 from chimerax.core.commands import run
 from chimerax.core.models import MODEL_POSITION_CHANGED
@@ -21,8 +22,11 @@ class ZScoreSelector:
         line_edit.setMinimumWidth(200)
         folder_button = QPushButton("Select folder")
         folder_button.clicked.connect(lambda: self.file_dialog(line_edit))
+        use_button = QPushButton("Use folder")
+        use_button.setSizePolicy(QSizePolicy(QSizePolicy.Maximum, QSizePolicy.Preferred))
+        use_button.clicked.connect(lambda: self.ok_clicked(line_edit))
         ok_cancel = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
-        ok_cancel.accepted.connect(lambda: self.ok_clicked(line_edit))
+        ok_cancel.accepted.connect(self.create_haddock_output)
         ok_cancel.rejected.connect(self.main_dialog.destroy)
 
         file_layout = QHBoxLayout()
@@ -32,15 +36,56 @@ class ZScoreSelector:
         main_layout = self.main_dialog.layout = QVBoxLayout()
         main_layout.addWidget(label)
         main_layout.addLayout(file_layout)
+        main_layout.addWidget(use_button)
+        main_layout.setAlignment(use_button, Qt.AlignRight)
         main_layout.addWidget(ok_cancel)
         
         self.main_dialog.ui_area.setLayout(main_layout)
+        self.main_dialog.cleanup = self.cleanup
         self.main_dialog.manage("side")
         
+        # Start for testing
+        # line_edit.setText("C:/Users/ilsel/OneDrive/Documenten/MCLS/Bioinformatics_profile/zscore/disvis_out")
+        # self.ok_clicked(line_edit)
+        # return
+        # End for testing
+        
+        
+    def cleanup(self):
+        
+        if not hasattr(self, "pbs"):
+            return
+        
+        self.pbs.displays = True
+        self.pbs.colors = self.colors["Main"]
+        self.triggerset.remove_handler(self.movement_handler)
+        
+        
+    def create_haddock_output(self):
+        
+        if not hasattr(self, "pbs"):
+            return
+        
+        setters = self.setters
+        values = [None] * len(setters)
+        for i, setter in enumerate(setters):
+            values[i] = float(setter.text())
+            
+        chosen_restraints = []
+        
+        for pb in self.pbs:
+            if (pb.zscore < values[0] or pb.zscore > values[1]):
+                continue
+            chosen_restraints.append(pb.restraint_number)
+        
+        chosen_restraints.sort()
+        for restraint in chosen_restraints:
+            print(restraint)
+            
 
     def file_dialog(self, line_edit):
 
-        folder = QFileDialog.getExistingDirectory(self.main_dialog, 
+        folder = QFileDialog.getExistingDirectory(None, 
                                                   "Select a DisVis output folder", 
                                                   "", QFileDialog.ShowDirsOnly
                                                   | QFileDialog.DontResolveSymlinks)
@@ -68,20 +113,25 @@ class ZScoreSelector:
         zscores = self.get_zscores(zscore_path, "\S+(?=\n)")
         
         input_path = list(self.get_files(".txt"))[0]
-        pbs = self.make_pbs(input_path, disvis_chains, zscores)
+        self.pbs = self.make_pbs(input_path, disvis_chains, zscores)
         
         self.get_input_distances(input_path)
-        self.color_pbs(pbs)
-        self.trigger_handler(disvis_chains.values(), pbs)
-        self.prepare_slider(zscores, pbs)
+        self.colors = {"Main": [255, 255, 0, 255], "Cutoff": [255, 0, 0, 255]}
+        self.color_pbs()
+        self.trigger_handler(disvis_chains.values())
+        self.prepare_slider(zscores)
         
         
-    def prepare_slider(self, zscores, pbs):
+    def prepare_slider(self, zscores):
         
         minimum = min(zscores)
         maximum = max(zscores)
-        slider = ZScoreSlider("zscore", True, minimum, maximum, pbs)
-        self.main_dialog.layout.addLayout(slider.layout)
+        slider = ZScoreSlider("zscore", True, minimum, maximum, self.pbs)
+        main_layout = self.main_dialog.layout
+        rows = main_layout.count()
+        main_layout.insertLayout(rows - 1, slider.layout)
+        
+        self.setters = slider.setters
         
         
     def get_chains(self, disvis_chains):
@@ -121,6 +171,7 @@ class ZScoreSelector:
                 j += 3
             pb = group.new_pseudobond(atoms[0], atoms[1])
             pb.zscore = zscores[i]
+            pb.restraint_number = i + 1
         self.session.models.add([group])
         
         file.close()
@@ -147,22 +198,22 @@ class ZScoreSelector:
         return number_of_pbs, disvis_chains
         
         
-    def trigger_handler(self, chains, pbs):
+    def trigger_handler(self, chains):
         
-        triggerset = self.session.triggers
-        self.movement_handler = triggerset.add_handler(
+        self.triggerset = self.session.triggers
+        self.movement_handler = self.triggerset.add_handler(
             MODEL_POSITION_CHANGED,
-            lambda trigger, trigger_data, c=chains, p=pbs: 
-                self.handle_movement(trigger, trigger_data, c, p))
+            lambda trigger, trigger_data, c=chains: 
+                self.handle_movement(trigger, trigger_data, c))
         
         
-    def handle_movement(self, trigger, trigger_data, chains, pbs):
+    def handle_movement(self, trigger, trigger_data, chains):
         
         # Maybe it only works if fixed or scanning are moved?
         if not trigger_data in chains:
             return
         
-        self.color_pbs(pbs)
+        self.color_pbs()
         
         
     def get_input_distances(self, path):
@@ -178,13 +229,13 @@ class ZScoreSelector:
         self.maximum = float(self.find_string("\S+(?=\n)", first_line))
         
         
-    def color_pbs(self, pbs):
+    def color_pbs(self):
         
-        for pb in pbs:
+        for pb in self.pbs:
             if pb.length >= self.minimum and pb.length <= self.maximum:
-                color = [255, 255, 0, 255]
+                color = self.colors["Main"]
             else:
-                color = [170, 0, 0, 255]
+                color = self.colors["Cutoff"]
             pb.color = color
         
         
