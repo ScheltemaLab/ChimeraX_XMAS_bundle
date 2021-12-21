@@ -1,47 +1,41 @@
-from PyQt5.QtWidgets import QDialog, QLabel, QLineEdit, QPushButton, QDialogButtonBox, QHBoxLayout, QVBoxLayout, QFileDialog
+from PyQt5.QtWidgets import QLabel, QLineEdit, QPushButton, QDialogButtonBox, QHBoxLayout, QVBoxLayout, QFileDialog
 from pathlib import Path
 from chimerax.core.commands import run
 from chimerax.core.models import MODEL_POSITION_CHANGED
 import re
 import os
+from .tool import Slider, ExportSlider
 
 class ZScoreSelector:
 
 
-    def __init__(self, session):
+    def __init__(self, session, tool_window):
 
         self.session = session
         
-        self.main_dialog = QDialog()
-        self.main_dialog.setWindowTitle("Create HADDOCK input from DisVis output")
+        self.main_dialog = tool_window.create_child_window("Create HADDOCK input from DisVis output")
 
         label = QLabel("Select a DisVis output folder:")
         line_edit = QLineEdit()
-        
-        # Start for testing
-        line_edit.setText("C:/Users/Nathan/Documents/zscore/disvis_out")
-        self.ok_clicked(line_edit)
-        return
-    # End for testing
     
         line_edit.setMinimumWidth(200)
         folder_button = QPushButton("Select folder")
         folder_button.clicked.connect(lambda: self.file_dialog(line_edit))
         ok_cancel = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
         ok_cancel.accepted.connect(lambda: self.ok_clicked(line_edit))
-        ok_cancel.rejected.connect(self.main_dialog.close)
+        ok_cancel.rejected.connect(self.main_dialog.destroy)
 
         file_layout = QHBoxLayout()
         file_layout.addWidget(line_edit)
         file_layout.addWidget(folder_button)
         
-        main_layout = QVBoxLayout()
+        main_layout = self.main_dialog.layout = QVBoxLayout()
         main_layout.addWidget(label)
         main_layout.addLayout(file_layout)
         main_layout.addWidget(ok_cancel)
-
-        self.main_dialog.setLayout(main_layout)
-        self.main_dialog.show()
+        
+        self.main_dialog.ui_area.setLayout(main_layout)
+        self.main_dialog.manage("side")
         
 
     def file_dialog(self, line_edit):
@@ -60,75 +54,128 @@ class ZScoreSelector:
         if self.folder == "/":
             return
         
-        extensions = ["*.pdb", "*.pb", "*.mrc"]
+        number_of_pbs, disvis_chains = self.read_log()
+                          
+        extensions = [disvis_chains["fix"], disvis_chains["scan"], ".mrc"]
         for extension in extensions:
             for file in self.get_files(extension):
                 command = "open %s" % file
                 run(self.session, command)
                 
+        disvis_chains = self.get_chains(disvis_chains)
+                
+        zscore_path = self.folder + "z-score.out"
+        zscores = self.get_zscores(zscore_path, "\S+(?=\n)")
+        
+        input_path = list(self.get_files(".txt"))[0]
+        pbs = self.make_pbs(input_path, disvis_chains, zscores)
+        
+        self.get_input_distances(input_path)
+        self.color_pbs(pbs)
+        self.trigger_handler(disvis_chains.values(), pbs)
+        self.prepare_slider(zscores, pbs)
+        
+        
+    def prepare_slider(self, zscores, pbs):
+        
+        minimum = min(zscores)
+        maximum = max(zscores)
+        slider = ZScoreSlider("zscore", True, minimum, maximum, pbs)
+        self.main_dialog.layout.addLayout(slider.layout)
+        
+        
+    def get_chains(self, disvis_chains):
+        
+        for model in self.session.models:
+            if not model.name in disvis_chains.values():
+                continue
+            index = list(disvis_chains.values()).index(model.name)
+            key = list(disvis_chains.keys())[index]
+            disvis_chains[key] = model
+            
+        return disvis_chains
+        
+    
+    def make_pbs(self, path, disvis_chains, zscores):      
+            
+        file = open(path, "r") 
+        pb_manager = self.session.pb_manager
+        name = os.path.basename(path).replace(".txt", "")
+        group = pb_manager.get_group(name)
+        group.radius = 0.5
+        group.color = [255, 255, 0, 255]
+        for i, line in enumerate(file):
+            split_line = line.split(" ")
+            atoms = [None] * len(disvis_chains)
+            j = 0
+            for k, chain in enumerate(disvis_chains):
+                chain_id = split_line[j]
+                res_number = int(split_line[j + 1])
+                atom_name = split_line[j + 2]
+                model = disvis_chains[chain]
+                residue = model.find_residue(chain_id, res_number)
+                for atom in residue.atoms:
+                    if atom.name != atom_name:
+                        continue
+                    atoms[k] = atom
+                j += 3
+            pb = group.new_pseudobond(atoms[0], atoms[1])
+            pb.zscore = zscores[i]
+        self.session.models.add([group])
+        
+        file.close()
+        return group.pseudobonds
+        
+    
+    def read_log(self):      
+        
         log_path = self.folder + "disvis.log"
         log_file = open(log_path, "r")
         keys = "fix", "scan"
-        chains = {}
+        disvis_chains = {}
         for line in log_file:
             line_lower = line.lower()
             if not line_lower.count("pdb") > 0:
-                continue
+                if line_lower.count("distance") > 0:
+                    number_of_pbs = self.find_string("\d+(?=\n)", line)
             for key in keys:
                 if (line_lower.count(key)) > 0:
-                    chains[key] = self.get_name(line, "pdb")
+                    disvis_chains[key] = self.find_string("\w+\.pdb", line)
                     break
-
-        pb_path = os.path.normpath(list(self.get_files("*.pb"))[0])
-        pb_model = self.get_name(pb_path, "pb")      
-        for model in self.session.models:
-            if model.name == pb_model:
-                pbs = model.pseudobonds
-                self.pb_model = model
-        number_of_pbs = len(pbs)
-        
-        input_path = list(self.get_files("*.txt"))[0]
-        input_lines = self.list_from_file(input_path,
-                                          "\S+\s+" * 5 + "\S+",
-                                          number_of_pbs)
-        
-        self.get_input_distances(input_path, pbs)
-        self.trigger_handler(chains.values(), pbs)
-        
-        zscore_path = self.folder + "z-score.out"
-        zscores = self.list_from_file(zscore_path, "\S+(?=\n)", number_of_pbs)
-        
-        self.find_zscores(pbs, chains, input_lines, zscores)
+                
+        log_file.close()
+        return number_of_pbs, disvis_chains
         
         
-    def trigger_handler(self, chain_names, pbs):
+    def trigger_handler(self, chains, pbs):
         
         triggerset = self.session.triggers
         self.movement_handler = triggerset.add_handler(
             MODEL_POSITION_CHANGED,
-            lambda trigger, trigger_data, cn=chain_names, p=pbs: 
-                self.handle_movement(trigger, trigger_data, cn, p))
+            lambda trigger, trigger_data, c=chains, p=pbs: 
+                self.handle_movement(trigger, trigger_data, c, p))
         
         
-    def handle_movement(self, trigger, trigger_data, chain_names, pbs):
+    def handle_movement(self, trigger, trigger_data, chains, pbs):
         
         # Maybe it only works if fixed or scanning are moved?
-        if not trigger_data.name in chain_names:
+        if not trigger_data in chains:
             return
         
         self.color_pbs(pbs)
         
         
-    def get_input_distances(self, path, pbs):
+    def get_input_distances(self, path):
         
-        for line in open(path, "r"):
+        file = open(path, "r")
+        for line in file:
             first_line = line
             break
         
+        file.close()
+        
         self.minimum = float(self.find_string("\S+(?=\s+\S+\n)", first_line))
         self.maximum = float(self.find_string("\S+(?=\n)", first_line))
-        
-        self.color_pbs(pbs)
         
         
     def color_pbs(self, pbs):
@@ -144,51 +191,65 @@ class ZScoreSelector:
     def find_string(self, search_string, whole_string):
         
         return re.search(search_string, whole_string).group(0)
-    
-        
-    def find_zscores(self, pbs, chains, input_lines, zscores):
-        
-        for pb in pbs:
-            strings = [None] * len(pb.atoms)
-            for atom in pb.atoms:
-                model = atom.structure.name
-                if model == chains["fix"]:
-                    i = 0
-                elif model == chains["scan"]:
-                    i = 1
-                residue = atom.residue
-                chain_id = residue.chain_id
-                number = str(residue.number)
-                name = atom.name
-                string = chain_id + " " + number + " " + name
-                strings[i] = string
-            pb_line = " ".join(strings)
-            j = input_lines.index(pb_line)
-            pb.zscore = float(zscores[j])
             
     
-    def list_from_file(self, path, search_string, number):
-                
+    def get_zscores(self, path, search_string):
+        
+        # Doesn't work if you use file instead of open(path, "r)
+        zscores = [None] * sum(1 for line in open(path, "r"))
         file = open(path, "r")
-        lst = [None] * number
-        i = 0
-        for line in file:
-            item = self.find_string(search_string, line)
-            lst[i] = item
-            i += 1
-            
-        return lst
+        for i, line in enumerate(file):
+            zscores[i] = float(self.find_string(search_string, line))
         
-        
-    def get_name(self, line, extension):
-        
-        search_string = "\w+\.%s" % extension
-        
-        return self.find_string(search_string, line)      
+        file.close()            
+        return zscores    
     
         
     def get_files(self, extension):
         
-        files = Path(self.folder).glob(extension)
+        files = Path(self.folder).glob("*" + extension)
         
         return files
+    
+    
+class ZScoreSlider(Slider):
+    
+    
+    def __init__(self, value_type="zscore", enabled=True, minimum=None, maximum=None, pbs=None):
+        
+        self.add = -minimum
+        super().__init__(value_type, enabled, minimum, maximum, pbs)
+        self.function = ExportSlider.display_pseudobonds
+        
+    
+    def within_range(self, value_type, pbs, function=None):
+
+        score_range = self.slider.value()
+        real_range = self.get_real_values(score_range)
+        within_range = {}
+        for pb in pbs:
+            zscore = pb.zscore
+            is_outside_range = (zscore < real_range[0] 
+                                or zscore > real_range[1])
+            within_range[pb] = is_outside_range
+            
+        self.function(self, within_range)
+        
+    
+    def get_real_values(self, values):
+        
+        real_values = [None] * len(values)
+        
+        for i, value in enumerate(values):
+            real_value = value / 1000 - self.add
+            real_values[i] = round(real_value, 3)
+            
+        return real_values
+    
+        
+    def get_slider_values(self, minimum, maximum):
+
+        minimum = (minimum + self.add) * 1000
+        maximum = (maximum + self.add) * 1000
+        
+        return minimum, maximum

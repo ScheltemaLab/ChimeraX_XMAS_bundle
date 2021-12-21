@@ -166,7 +166,7 @@ class XMAS(ToolInstance):
         
         from .z_score import ZScoreSelector
 
-        ZScoreSelector(self.session)
+        ZScoreSelector(self.session, self.tool_window)
 
 
     def show_visualize_dialog(self, pbs):
@@ -1325,7 +1325,7 @@ class XMAS(ToolInstance):
     def make_sliders(self, pbs, cls=None, dialog=None):
 
         maximum_distance = self.max_pseudobond_distance(pbs)
-        distance_slider = cls("distance", True, maximum_distance, pbs, dialog)
+        distance_slider = cls("distance", True, 0, maximum_distance, pbs, dialog)
         make_score_slider = True
         for group in pbs.by_group:
             pb = group[1][0]
@@ -1334,7 +1334,7 @@ class XMAS(ToolInstance):
                 break
         if make_score_slider:
             maximum_score = self.get_maximum_score(pbs)
-            score_slider = cls("score", True, maximum_score, pbs, dialog)
+            score_slider = cls("score", True, 0, maximum_score, pbs, dialog)
         else:
             score_slider = cls("score", False)
         
@@ -1952,7 +1952,7 @@ class PrePseudobond:
 class Slider:
     
     
-    def __init__(self, value_type="distance", enabled=True, maximum=None, pbs=None):
+    def __init__(self, value_type="distance", enabled=True, minimum=None, maximum=None, pbs=None):
         
         from PyQt5.QtWidgets import QGridLayout, QLabel, QLineEdit
         from qtrangeslider import QRangeSlider
@@ -1965,11 +1965,12 @@ class Slider:
             title = "Pseudobond distance (Å)"
         elif value_type == "score":
             title = "Max. XLinkX score"
+        elif value_type == "zscore":
+            title = "z-score"
         label = QLabel(title + ":")
         self.slider = QRangeSlider(Qt.Horizontal)
         setter_min = QLineEdit()
         setter_max = QLineEdit()
-        self.maximum = maximum
         
         self.layout.addWidget(label, 0, 0, 1, 4)
         self.layout.addWidget(self.slider, 1, 1, 1, 2)
@@ -1984,27 +1985,44 @@ class Slider:
             self.widgets[j] = self.layout.itemAt(j).widget()
             i -=1 
         
-        self.set_full_range(maximum)
+        self.set_full_range(minimum, maximum)
         signal = self.slider.valueChanged
         self.function = None
-        self.slider.valueChanged.connect(lambda: self.within_range(value_type, pbs, self.function))
+        signal.connect(lambda: self.within_range(value_type, pbs, self.function))
         signal.connect(self.adjust_setters)
         
         self.setters = [setter_min, setter_max]
         alignments = [Qt.AlignRight, Qt.AlignLeft]
-        texts = ["0", str(maximum)]
-        minimum = [True, False]
+        texts = [str(minimum), str(maximum)]
+        is_minimum = [True, False]
         for i, setter in enumerate(self.setters):
             setter.setAlignment(alignments[i])
             setter.setValidator(QDoubleValidator())
             setter.setText(texts[i])
-            setter.textChanged.connect(lambda text, m=minimum[i]: self.change_slider_value(text, m))
+            setter.textEdited.connect(lambda text, m=is_minimum[i]: self.change_slider_value(text, m))
+            
+        # Atrribute to make sure that setters are not adjusted when slider is changed due to editing of a setter   
+        self.no_adjustment = False
 
 
-    def set_full_range(self, maximum):
-
-        self.slider.setRange(0, maximum)
-        self.slider.setValue((0, maximum))
+    def set_full_range(self, minimum, maximum):
+        
+        # Since slider does not function when minimum != 0, create this
+        # function for ZScoreSlider.
+        minimum, maximum = self.get_slider_values(minimum, maximum)
+        
+        # After minimum and maximum values, None and None are also passed in.
+        # Haven't figured out why, but for now, this is the solution:
+        if minimum is None:
+            return
+        
+        self.slider.setRange(minimum, maximum)
+        self.slider.setValue((minimum, maximum))
+        
+        
+    def get_slider_values(self, minimum, maximum):
+        
+        return minimum, maximum
 
         
     def within_range(self, value_type, pbs, function=None):
@@ -2016,9 +2034,9 @@ class Slider:
             distance_slider = self.linked_slider
             score_slider = self
 
-        distance_range = distance_slider.slider.value()
-        score_range = score_slider.slider.value()
-        within_range = {}
+        distance_range = self.get_real_values(distance_slider.slider.value())
+        score_range = self.get_real_values(score_slider.slider.value())
+        is_within_range = {}
             
         for pb in pbs:
             distance = pb.length
@@ -2028,42 +2046,61 @@ class Slider:
                 score = pb.xlinkx_score
                 wrong_score = (score < score_range[0] or score > score_range[1])
             is_outside_range = (wrong_distance or wrong_score)
-            within_range[pb] = is_outside_range
+            is_within_range[pb] = is_outside_range
             
-        function(within_range)
+        function(is_within_range)
     
                 
     def adjust_setters(self):
         
-        values = self.slider.value()
+        # Make sure that setters are not adjusted when slider is changed due to
+        # editing of a setter
+        if self.no_adjustment:
+            self.no_adjustment = False
+            return
         
+        values = self.slider.value()
+        real_values = self.get_real_values(values)
         for i, setter in enumerate(self.setters):
-            setter.setText(str(values[i]))
-
+            setter.setText(str(real_values[i]))
             
-    def change_slider_value(self, text, minimum):
+            
+    def get_real_values(self, values):
+        
+        return values        
+        
+            
+    def change_slider_value(self, text, is_minimum):
+        
+        try:
+            value = float(text)
+        except:
+            return
+        
+        self.no_adjustment = True
 
-        if minimum:
-            values = (int(text), self.slider.value()[1])
+        if is_minimum:
+            minimum, _ = self.get_slider_values(value, 0)
+            maximum = self.slider.value()[1]
         else:
-            values = (self.slider.value()[0], int(text))
+            minimum = self.slider.value()[0]
+            _, maximum = self.get_slider_values(0, value)
   
-        self.slider.setValue(values)
+        self.slider.setValue((minimum, maximum))
 
 
 class ExportSlider(Slider):
     
     
-    def __init__(self, value_type="distance", enabled=True, maximum=None, pbs=None, *args):
+    def __init__(self, value_type="distance", enabled=True, minimum=None, maximum=None, pbs=None, *args):
         
-        super().__init__(value_type, enabled, maximum, pbs)
+        super().__init__(value_type, enabled, minimum, maximum, pbs)
         self.function = self.display_pseudobonds
    
         if not enabled:
             for widget in self.widgets:
                 widget.setEnabled(False)
             return
-        
     
     def display_pseudobonds(self, display_dict):
         
@@ -2074,14 +2111,15 @@ class ExportSlider(Slider):
             else:
                 display = True
             pb.display = display
+            
 
 
 class VisualizeSlider(Slider):
 
     
-    def __init__(self, value_type="distance", enabled=True, maximum=None, pbs=None, dialog=None):
+    def __init__(self, value_type="distance", enabled=True, minimum=None, maximum=None, pbs=None, dialog=None):
         
-        super().__init__(value_type, enabled, maximum, pbs)
+        super().__init__(value_type, enabled, minimum, maximum, pbs)
         self.function = self.cutoff_style
         self.dialog = dialog
         self.attributes = ["color", "radius"]
