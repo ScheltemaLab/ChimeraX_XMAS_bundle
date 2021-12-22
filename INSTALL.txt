@@ -1,8 +1,10 @@
+<<<<<<< INSTALL.txt
 - Store the 'bundle_info.xml' file and the 'src' folder in a folder of choice. The 'src' folder should contain:
   - An '__init__.py' file
   - A 'tool.py' file
-- In the ChimeraX application, run the command 'devel install “[path/to/folder_of_choice]”'
 - Install matplotlib-venn on the ChimeraX console, by running the following command via your command prompt:
-  - '"[path/to/console]" -m easy_install matplotlib-venn --user'
-    (For example, my [path/to/console] is 'C:\Program Files\ChimeraX 1.2.5\bin\ChimeraX-console.exe')
+  - '"<path/to/console>" -m easy_install matplotlib-venn --user'
+    (For example, my <path/to/console> is 'C:\Program Files\ChimeraX 1.2.5\bin\ChimeraX-console.exe')   
+- In the ChimeraX application, run the command 'devel install “<path/to/folder_of_choice>”'
 - The bundle can be found in the ChimeraX application under 'Tools' - 'Structure Analysis' as 'XMAS'
+>>>>>>> INSTALL.txt
