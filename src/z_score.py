@@ -212,7 +212,7 @@ class ZScoreSelector:
         # Maybe it only works if fixed or scanning are moved?
         if not trigger_data in chains:
             return
-        
+
         self.color_pbs()
         
         
