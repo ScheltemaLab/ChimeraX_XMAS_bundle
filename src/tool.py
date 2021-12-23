@@ -169,7 +169,7 @@ class XMAS(ToolInstance):
         
         from .z_score import ZScoreSelector
 
-        ZScoreSelector(self.session, self.tool_window)
+        ZScoreSelector(self)
 
 
     def show_visualize_dialog(self, pbs):

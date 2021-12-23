@@ -10,10 +10,11 @@ from .tool import Slider, ExportSlider
 class ZScoreSelector:
 
 
-    def __init__(self, session, tool_window):
+    def __init__(self, xmas):
 
-        self.session = session
-        
+        self.xmas = xmas
+        self.session = xmas.session
+        tool_window = xmas.tool_window        
         self.main_dialog = tool_window.create_child_window("Create HADDOCK input from DisVis output")
 
         label = QLabel("Select a DisVis output folder:")
@@ -24,9 +25,9 @@ class ZScoreSelector:
         folder_button.clicked.connect(lambda: self.file_dialog(line_edit))
         use_button = QPushButton("Use folder")
         use_button.setSizePolicy(QSizePolicy(QSizePolicy.Maximum, QSizePolicy.Preferred))
-        use_button.clicked.connect(lambda: self.ok_clicked(line_edit))
+        use_button.clicked.connect(lambda: self.use_folder_clicked(line_edit))
         ok_cancel = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
-        ok_cancel.accepted.connect(self.create_haddock_output)
+        ok_cancel.accepted.connect(self.create_pb_file)
         ok_cancel.rejected.connect(self.main_dialog.destroy)
 
         file_layout = QHBoxLayout()
@@ -46,7 +47,7 @@ class ZScoreSelector:
         
         # Start for testing
         # line_edit.setText("C:/Users/ilsel/OneDrive/Documenten/MCLS/Bioinformatics_profile/zscore/disvis_out")
-        # self.ok_clicked(line_edit)
+        # self.use_folder_clicked(line_edit)
         # return
         # End for testing
         
@@ -61,7 +62,7 @@ class ZScoreSelector:
         self.triggerset.remove_handler(self.movement_handler)
         
         
-    def create_haddock_output(self):
+    def create_pb_file(self):
         
         if not hasattr(self, "pbs"):
             return
@@ -76,11 +77,21 @@ class ZScoreSelector:
         for pb in self.pbs:
             if (pb.zscore < values[0] or pb.zscore > values[1]):
                 continue
-            chosen_restraints.append(pb.restraint_number)
+            pb_line = self.xmas.create_pb_line(pb)
+            chosen_restraints.append(pb_line)
+            
+        if len(chosen_restraints) == 0:
+            print("No restraints found for this z-score range")
+            return
+            
+        path = self.folder + "/Step_2/"
         
-        chosen_restraints.sort()
-        for restraint in chosen_restraints:
-            print(restraint)
+        if not os.path.exists(path):
+            os.makedirs(path)
+            
+        file_path = path + self.name + "_disvis_selected.pb"
+        
+        self.xmas.write_file(file_path, chosen_restraints, "export")
             
 
     def file_dialog(self, line_edit):
@@ -92,7 +103,7 @@ class ZScoreSelector:
         line_edit.setText(folder)
 
 
-    def ok_clicked(self, line_edit):
+    def use_folder_clicked(self, line_edit):
         
         self.folder = line_edit.text() + "/"
         
@@ -150,8 +161,8 @@ class ZScoreSelector:
             
         file = open(path, "r") 
         pb_manager = self.session.pb_manager
-        name = os.path.basename(path).replace(".txt", "")
-        group = pb_manager.get_group(name)
+        self.name = os.path.basename(path).replace(".txt", "")
+        group = pb_manager.get_group(self.name)
         group.radius = 0.5
         group.color = [255, 255, 0, 255]
         for i, line in enumerate(file):
@@ -171,7 +182,6 @@ class ZScoreSelector:
                 j += 3
             pb = group.new_pseudobond(atoms[0], atoms[1])
             pb.zscore = zscores[i]
-            pb.restraint_number = i + 1
         self.session.models.add([group])
         
         file.close()
@@ -208,8 +218,7 @@ class ZScoreSelector:
         
         
     def handle_movement(self, trigger, trigger_data, chains):
-        
-        # Maybe it only works if fixed or scanning are moved?
+
         if not trigger_data in chains:
             return
 
