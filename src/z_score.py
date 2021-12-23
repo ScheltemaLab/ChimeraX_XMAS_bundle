@@ -1,3 +1,15 @@
+# vim: set expandtab shiftwidth=4 softtabstop=4:
+# === UCSF ChimeraX Copyright ===
+# Copyright 2016 Regents of the University of California.
+# All rights reserved. This software provided pursuant to a license 
+# agreement containing restrictions on its disclosure, duplication and 
+# use. For details see:
+# http://www.rbvi.ucsf.edu/chimerax/docs/licensing.html
+# This notice must be embedded in or attached to all copies, including 
+# partial copies, of the software or any revisions or derivations 
+# thereof.
+# === UCSF ChimeraX Copyright ===
+
 from PyQt5.QtWidgets import QLabel, QLineEdit, QPushButton, QDialogButtonBox, QHBoxLayout, QVBoxLayout, QFileDialog, QSizePolicy
 from PyQt5.QtCore import Qt
 from pathlib import Path
@@ -8,6 +20,10 @@ import os
 from .tool import Slider, ExportSlider
 
 class ZScoreSelector:
+
+    """
+    A window is opened in which the user can select a DisVis output folder. 
+    """
 
 
     def __init__(self, xmas):
@@ -44,54 +60,6 @@ class ZScoreSelector:
         self.main_dialog.ui_area.setLayout(main_layout)
         self.main_dialog.cleanup = self.cleanup
         self.main_dialog.manage("side")
-        
-        # Start for testing
-        # line_edit.setText("C:/Users/ilsel/OneDrive/Documenten/MCLS/Bioinformatics_profile/zscore/disvis_out")
-        # self.use_folder_clicked(line_edit)
-        # return
-        # End for testing
-        
-        
-    def cleanup(self):
-        
-        if not hasattr(self, "pbs"):
-            return
-        
-        self.pbs.displays = True
-        self.pbs.colors = self.colors["Main"]
-        self.triggerset.remove_handler(self.movement_handler)
-        
-        
-    def create_pb_file(self):
-        
-        if not hasattr(self, "pbs"):
-            return
-        
-        setters = self.setters
-        values = [None] * len(setters)
-        for i, setter in enumerate(setters):
-            values[i] = float(setter.text())
-            
-        chosen_restraints = []
-        
-        for pb in self.pbs:
-            if (pb.zscore < values[0] or pb.zscore > values[1]):
-                continue
-            pb_line = self.xmas.create_pb_line(pb)
-            chosen_restraints.append(pb_line)
-            
-        if len(chosen_restraints) == 0:
-            print("No restraints found for this z-score range")
-            return
-            
-        path = self.folder + "/Step_2/"
-        
-        if not os.path.exists(path):
-            os.makedirs(path)
-            
-        file_path = path + self.name + "_disvis_selected.pb"
-        
-        self.xmas.write_file(file_path, chosen_restraints, "export")
             
 
     def file_dialog(self, line_edit):
@@ -130,19 +98,39 @@ class ZScoreSelector:
         self.colors = {"Main": [255, 255, 0, 255], "Cutoff": [255, 0, 0, 255]}
         self.color_pbs()
         self.trigger_handler(disvis_chains.values())
-        self.prepare_slider(zscores)
+        self.prepare_slider(zscores) 
+        
+    
+    def read_log(self):      
+        
+        log_path = self.folder + "disvis.log"
+        log_file = open(log_path, "r")
+        keys = "fix", "scan"
+        disvis_chains = {}
+        for line in log_file:
+            line_lower = line.lower()
+            if not line_lower.count("pdb") > 0:
+                if line_lower.count("distance") > 0:
+                    number_of_pbs = self.find_string("\d+(?=\n)", line)
+            for key in keys:
+                if (line_lower.count(key)) > 0:
+                    disvis_chains[key] = self.find_string("\w+\.pdb", line)
+                    break
+                
+        log_file.close()
+        return number_of_pbs, disvis_chains
         
         
-    def prepare_slider(self, zscores):
+    def find_string(self, search_string, whole_string):
         
-        minimum = min(zscores)
-        maximum = max(zscores)
-        slider = ZScoreSlider("zscore", True, minimum, maximum, self.pbs)
-        main_layout = self.main_dialog.layout
-        rows = main_layout.count()
-        main_layout.insertLayout(rows - 1, slider.layout)
+        return re.search(search_string, whole_string).group(0)
+    
         
-        self.setters = slider.setters
+    def get_files(self, extension):
+        
+        files = Path(self.folder).glob("*" + extension)
+        
+        return files
         
         
     def get_chains(self, disvis_chains):
@@ -155,6 +143,18 @@ class ZScoreSelector:
             disvis_chains[key] = model
             
         return disvis_chains
+            
+    
+    def get_zscores(self, path, search_string):
+        
+        # Doesn't work if you use file instead of open(path, "r)
+        zscores = [None] * sum(1 for line in open(path, "r"))
+        file = open(path, "r")
+        for i, line in enumerate(file):
+            zscores[i] = float(self.find_string(search_string, line))
+        
+        file.close()            
+        return zscores   
         
     
     def make_pbs(self, path, disvis_chains, zscores):      
@@ -187,43 +187,6 @@ class ZScoreSelector:
         file.close()
         return group.pseudobonds
         
-    
-    def read_log(self):      
-        
-        log_path = self.folder + "disvis.log"
-        log_file = open(log_path, "r")
-        keys = "fix", "scan"
-        disvis_chains = {}
-        for line in log_file:
-            line_lower = line.lower()
-            if not line_lower.count("pdb") > 0:
-                if line_lower.count("distance") > 0:
-                    number_of_pbs = self.find_string("\d+(?=\n)", line)
-            for key in keys:
-                if (line_lower.count(key)) > 0:
-                    disvis_chains[key] = self.find_string("\w+\.pdb", line)
-                    break
-                
-        log_file.close()
-        return number_of_pbs, disvis_chains
-        
-        
-    def trigger_handler(self, chains):
-        
-        self.triggerset = self.session.triggers
-        self.movement_handler = self.triggerset.add_handler(
-            MODEL_POSITION_CHANGED,
-            lambda trigger, trigger_data, c=chains: 
-                self.handle_movement(trigger, trigger_data, c))
-        
-        
-    def handle_movement(self, trigger, trigger_data, chains):
-
-        if not trigger_data in chains:
-            return
-
-        self.color_pbs()
-        
         
     def get_input_distances(self, path):
         
@@ -248,28 +211,77 @@ class ZScoreSelector:
             pb.color = color
         
         
-    def find_string(self, search_string, whole_string):
+    def trigger_handler(self, chains):
         
-        return re.search(search_string, whole_string).group(0)
+        self.triggerset = self.session.triggers
+        self.movement_handler = self.triggerset.add_handler(
+            MODEL_POSITION_CHANGED,
+            lambda trigger, trigger_data, c=chains: 
+                self.handle_movement(trigger, trigger_data, c))
+        
+        
+    def handle_movement(self, trigger, trigger_data, chains):
+
+        if not trigger_data in chains:
+            return
+
+        self.color_pbs()
+        
+        
+    def prepare_slider(self, zscores):
+        
+        minimum = min(zscores)
+        maximum = max(zscores)
+        slider = ZScoreSlider("zscore", True, minimum, maximum, self.pbs)
+        main_layout = self.main_dialog.layout
+        rows = main_layout.count()
+        main_layout.insertLayout(rows - 1, slider.layout)
+        
+        self.setters = slider.setters
+
+##########################################################################################
+        
+        
+    def create_pb_file(self):
+        
+        if not hasattr(self, "pbs"):
+            return
+        
+        setters = self.setters
+        values = [None] * len(setters)
+        for i, setter in enumerate(setters):
+            values[i] = float(setter.text())
             
-    
-    def get_zscores(self, path, search_string):
+        chosen_restraints = []
         
-        # Doesn't work if you use file instead of open(path, "r)
-        zscores = [None] * sum(1 for line in open(path, "r"))
-        file = open(path, "r")
-        for i, line in enumerate(file):
-            zscores[i] = float(self.find_string(search_string, line))
+        for pb in self.pbs:
+            if (pb.zscore < values[0] or pb.zscore > values[1]):
+                continue
+            pb_line = self.xmas.create_pb_line(pb)
+            chosen_restraints.append(pb_line)
+            
+        if len(chosen_restraints) == 0:
+            print("No restraints found for this z-score range")
+            return
+            
+        path = self.folder + "/Step_2/"
         
-        file.close()            
-        return zscores    
-    
+        if not os.path.exists(path):
+            os.makedirs(path)
+            
+        file_path = path + self.name + "_disvis_selected.pb"
         
-    def get_files(self, extension):
+        self.xmas.write_file(file_path, chosen_restraints, "export")
         
-        files = Path(self.folder).glob("*" + extension)
         
-        return files
+    def cleanup(self):
+        
+        if not hasattr(self, "pbs"):
+            return
+        
+        self.pbs.displays = True
+        self.pbs.colors = self.colors["Main"]
+        self.triggerset.remove_handler(self.movement_handler)
     
     
 class ZScoreSlider(Slider):
