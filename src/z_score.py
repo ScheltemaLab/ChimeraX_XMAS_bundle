@@ -10,28 +10,35 @@
 # thereof.
 # === UCSF ChimeraX Copyright ===
 
-from PyQt5.QtWidgets import QLabel, QLineEdit, QPushButton, QDialogButtonBox, QHBoxLayout, QVBoxLayout, QFileDialog, QSizePolicy
-from PyQt5.QtCore import Qt
-from pathlib import Path
 from chimerax.core.commands import run
 from chimerax.core.models import MODEL_POSITION_CHANGED
-import re
 import os
-from .tool import Slider, ExportSlider
+from pathlib import Path
+from PyQt5.QtCore import Qt
+from PyQt5.QtWidgets import (QLabel, QLineEdit, QPushButton, QDialogButtonBox,
+                             QHBoxLayout, QVBoxLayout, QFileDialog,
+                             QSizePolicy)
+import re
 
 class ZScoreSelector:
 
-    """
-    A window is opened in which the user can select a DisVis output folder. 
-    """
+    # A window is opened in which the user can select a DisVis output folder.
+    # From this folder, the .pdb and .mrc files are opened, and the pseudobonds
+    # are drawn on the structures. The user-specified distance restraints are a
+    # cutoff for pseudobond color. Colors are adjusted upon model movement. A
+    # slider allows selection of pseudobonds based on z-score. A .pb file is
+    # generated with the selected pseudobonds.
 
 
     def __init__(self, xmas):
-
+        
+        # Create a child window of the main tool window
         self.xmas = xmas
         self.session = xmas.session
         tool_window = xmas.tool_window        
-        self.main_dialog = tool_window.create_child_window("Create HADDOCK input from DisVis output")
+        self.main_dialog = tool_window.create_child_window("Create HADDOCK "
+                                                           "input from DisVis "
+                                                           "output")
 
         label = QLabel("Select a DisVis output folder:")
         line_edit = QLineEdit()
@@ -40,9 +47,11 @@ class ZScoreSelector:
         folder_button = QPushButton("Select folder")
         folder_button.clicked.connect(lambda: self.file_dialog(line_edit))
         use_button = QPushButton("Use folder")
-        use_button.setSizePolicy(QSizePolicy(QSizePolicy.Maximum, QSizePolicy.Preferred))
+        use_button.setSizePolicy(QSizePolicy(QSizePolicy.Maximum, 
+                                             QSizePolicy.Preferred))
         use_button.clicked.connect(lambda: self.use_folder_clicked(line_edit))
-        ok_cancel = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        ok_cancel = QDialogButtonBox(QDialogButtonBox.Ok 
+                                     | QDialogButtonBox.Cancel)
         ok_cancel.accepted.connect(self.create_pb_file)
         ok_cancel.rejected.connect(self.main_dialog.destroy)
 
@@ -63,15 +72,20 @@ class ZScoreSelector:
             
 
     def file_dialog(self, line_edit):
-
-        folder = QFileDialog.getExistingDirectory(None, 
-                                                  "Select a DisVis output folder", 
-                                                  "", QFileDialog.ShowDirsOnly
-                                                  | QFileDialog.DontResolveSymlinks)
+        
+        # Get the DisVis output folder
+        
+        get_directory = QFileDialog.getExistingDirectory
+        folder = get_directory(None, "Select a DisVis output folder", "",
+                               QFileDialog.ShowDirsOnly 
+                               | QFileDialog.DontResolveSymlinks)
         line_edit.setText(folder)
 
 
     def use_folder_clicked(self, line_edit):
+        
+        # Open the .pdb and .mrc files, and create the pseudobonds with 
+        # corresponding z-scores
         
         self.folder = line_edit.text() + "/"
         
@@ -94,14 +108,21 @@ class ZScoreSelector:
         input_path = list(self.get_files(".txt"))[0]
         self.pbs = self.make_pbs(input_path, disvis_chains, zscores)
         
+        # Obtain input distances and color pseudobonds accordingly
         self.get_input_distances(input_path)
         self.colors = {"Main": [255, 255, 0, 255], "Cutoff": [255, 0, 0, 255]}
         self.color_pbs()
+        # Re-color when a chain is moved
         self.trigger_handler(disvis_chains.values())
+        
+        # Make the z-score slider
         self.prepare_slider(zscores) 
         
     
-    def read_log(self):      
+    def read_log(self):   
+        
+        # Obtain the number of restraints (= pseudobonds), and the fixed and
+        # scanning chain from the DisVis log file
         
         log_path = self.folder + "disvis.log"
         log_file = open(log_path, "r")
@@ -114,6 +135,7 @@ class ZScoreSelector:
                     number_of_pbs = self.find_string("\d+(?=\n)", line)
             for key in keys:
                 if (line_lower.count(key)) > 0:
+                    # Store the name of the chain in a dictionary
                     disvis_chains[key] = self.find_string("\w+\.pdb", line)
                     break
                 
@@ -128,12 +150,18 @@ class ZScoreSelector:
         
     def get_files(self, extension):
         
+        # Get the files with the specified extension from the DisVis output
+        # folder
+        
         files = Path(self.folder).glob("*" + extension)
         
         return files
         
         
     def get_chains(self, disvis_chains):
+        
+        # Store the ChimeraX structures that correspond to the fixed and 
+        # scanning chains in the dictionary (overwrite the names)
         
         for model in self.session.models:
             if not model.name in disvis_chains.values():
@@ -157,8 +185,12 @@ class ZScoreSelector:
         return zscores   
         
     
-    def make_pbs(self, path, disvis_chains, zscores):      
-            
+    def make_pbs(self, path, disvis_chains, zscores):     
+        
+        # Make the pseudobonds model
+        
+        # Use the DisVis input .txt file containing the restraints to find the
+        # atoms
         file = open(path, "r") 
         pb_manager = self.session.pb_manager
         self.name = os.path.basename(path).replace(".txt", "")
@@ -190,6 +222,8 @@ class ZScoreSelector:
         
     def get_input_distances(self, path):
         
+        # Obtain the distance restraints specified in the DisVis search
+        
         file = open(path, "r")
         for line in file:
             first_line = line
@@ -203,6 +237,9 @@ class ZScoreSelector:
         
     def color_pbs(self):
         
+        # If distance restraint is violated, the pseudobond is colored red. If
+        # not, it is colored yellow.
+        
         for pb in self.pbs:
             if pb.length >= self.minimum and pb.length <= self.maximum:
                 color = self.colors["Main"]
@@ -213,6 +250,8 @@ class ZScoreSelector:
         
     def trigger_handler(self, chains):
         
+        # Add a trigger handler for moved models
+        
         self.triggerset = self.session.triggers
         self.movement_handler = self.triggerset.add_handler(
             MODEL_POSITION_CHANGED,
@@ -221,6 +260,9 @@ class ZScoreSelector:
         
         
     def handle_movement(self, trigger, trigger_data, chains):
+        
+        # If one of the DisVis chains is moved, pseudobonds are re-colored
+        # according to their distances
 
         if not trigger_data in chains:
             return
@@ -230,6 +272,9 @@ class ZScoreSelector:
         
     def prepare_slider(self, zscores):
         
+        # Make a slider for the z-scores. Its range is adapted to the minimum
+        # and maximum z-scores in the DisVis output.
+        
         minimum = min(zscores)
         maximum = max(zscores)
         slider = ZScoreSlider("zscore", True, minimum, maximum, self.pbs)
@@ -238,11 +283,12 @@ class ZScoreSelector:
         main_layout.insertLayout(rows - 1, slider.layout)
         
         self.setters = slider.setters
-
-##########################################################################################
         
         
     def create_pb_file(self):
+        
+        # The user has clicked OK; pseudobonds that are within the specified
+        # z-score range are written in a new .pb file.
         
         if not hasattr(self, "pbs"):
             return
@@ -272,9 +318,12 @@ class ZScoreSelector:
         file_path = path + self.name + "_disvis_selected.pb"
         
         self.xmas.write_file(file_path, chosen_restraints, "export")
+        print("Selected restraints saved in %s" % file_path)
         
         
     def cleanup(self):
+        
+        # Code runs when the window is closed
         
         if not hasattr(self, "pbs"):
             return
@@ -283,18 +332,42 @@ class ZScoreSelector:
         self.pbs.colors = self.colors["Main"]
         self.triggerset.remove_handler(self.movement_handler)
     
-    
+
+from .tool import Slider, ExportSlider
+   
 class ZScoreSlider(Slider):
     
+    # Interactive slider to specify a range in z-scores. If a pseudobond's z-score is
+    # outside the specified range, it is not displayed.    
     
-    def __init__(self, value_type="zscore", enabled=True, minimum=None, maximum=None, pbs=None):
+    def __init__(self, value_type="zscore", enabled=True, minimum=None,
+                 maximum=None, pbs=None):
+        
+        # ZScoreSlider inherits from Slider. 
+        # The slider behaves weirdly when the minimum values is below zero. 
+        # However, z-scores can be negative values. Therefore, we will set the
+        # slider minimum to zero and perform a correction using the minimum 
+        # z-score multiplied by -1 (self.add)
         
         self.add = -minimum
         super().__init__(value_type, enabled, minimum, maximum, pbs)
         self.function = ExportSlider.display_pseudobonds
+    
+        
+    def get_slider_values(self, minimum, maximum):
+        
+        # Convert real z-scores to slider values
+
+        minimum = (minimum + self.add) * 1000
+        maximum = (maximum + self.add) * 1000
+        
+        return minimum, maximum
         
     
     def within_range(self, value_type, pbs, function=None):
+        
+        # Determine whether the pseudobonds' z-scores are within the specified
+        # range
 
         score_range = self.slider.value()
         real_range = self.get_real_values(score_range)
@@ -310,6 +383,8 @@ class ZScoreSlider(Slider):
     
     def get_real_values(self, values):
         
+        # Convert slider values to real z-scores
+        
         real_values = [None] * len(values)
         
         for i, value in enumerate(values):
@@ -317,11 +392,3 @@ class ZScoreSlider(Slider):
             real_values[i] = round(real_value, 3)
             
         return real_values
-    
-        
-    def get_slider_values(self, minimum, maximum):
-
-        minimum = (minimum + self.add) * 1000
-        maximum = (maximum + self.add) * 1000
-        
-        return minimum, maximum

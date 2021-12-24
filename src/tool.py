@@ -10,7 +10,37 @@
 # thereof.
 # === UCSF ChimeraX Copyright ===
 
+
+from chimerax.atomic.molarray import Pseudobonds
+from chimerax.atomic.pbgroup import selected_pseudobonds, PseudobondGroup
+from chimerax.atomic.structure import Structure
+from chimerax.color_key.model import ColorKeyModel
+from chimerax.core.colors import Colormap
+from chimerax.core.models import ADD_MODELS, REMOVE_MODELS
+from chimerax.core.selection import SELECTION_CHANGED
 from chimerax.core.tools import ToolInstance
+from chimerax.ui import MainToolWindow
+from chimerax.ui.widgets.color_button import MultiColorButton
+import itertools
+from matplotlib_venn import venn2, venn3
+import matplotlib.pyplot as plt
+import numpy as np 
+import pandas as pd
+from PyQt5.QtCore import Qt
+from PyQt5.QtGui import QDoubleValidator, QIntValidator
+from PyQt5.QtWidgets import (QVBoxLayout, QGridLayout, QHBoxLayout,
+                             QTreeWidget, QAbstractItemView, QPushButton,
+                             QLabel, QDialog, QCheckBox, QDialogButtonBox,
+                             QLineEdit, QSpacerItem, QSizePolicy, 
+                             QTreeWidgetItemIterator, QFileDialog,
+                             QTreeWidgetItem, QListWidget, QListWidgetItem,
+                             QComboBox, QButtonGroup, QRadioButton, 
+                             QStyledItemDelegate)     
+from qtrangeslider import QRangeSlider
+import re
+import seaborn as sns
+import string
+
 
 class XMAS(ToolInstance):
     # Inheriting from ToolInstance makes us known to the ChimeraX tool 
@@ -38,7 +68,6 @@ class XMAS(ToolInstance):
         # have a "ui_area" where we place the widgets composing our 
         # interface. The window isn't shown until its "manage" method 
         # is called.
-        from chimerax.ui import MainToolWindow
         self.tool_window = MainToolWindow(self)
 
         # Method to build and show the main window
@@ -52,8 +81,7 @@ class XMAS(ToolInstance):
         self.tool_window.cleanup = self.cleanup
 
         self.pb_manager = self.session.pb_manager
-
-        from chimerax.core.colors import Colormap
+        
         cmap = Colormap(None, ((1, 0, 0, 1), (1, 1, 0, 1), (0, 1, 0, 1)))
         self.score_cmap = cmap.linear_range(0, 200)
 
@@ -61,11 +89,6 @@ class XMAS(ToolInstance):
     def _build_ui(self):
 
         # Put our widgets in the tool window
- 
-        from PyQt5.QtWidgets import (
-            QVBoxLayout, QGridLayout, QHBoxLayout, QTreeWidget, 
-            QAbstractItemView, QPushButton, QLabel
-            )
         
         outer_layout = QVBoxLayout()
         top_layout = QGridLayout()
@@ -85,7 +108,8 @@ class XMAS(ToolInstance):
         self.file_selector.setColumnWidth(0, 200)
         self.file_selector.setSelectionMode(QAbstractItemView.MultiSelection)
 
-        file_buttons = {"Import files":self.dialog, "Remove selected files":self.remove_files}
+        file_buttons = {"Import files":self.dialog,
+                        "Remove selected files":self.remove_files}
         row_index= 2
         col_index = 2
 
@@ -104,7 +128,8 @@ class XMAS(ToolInstance):
         map_dict = {"model":self.model_selector, "file":self.file_selector}
         for key in map_dict:
             selector = map_dict[key]
-            function = lambda _, s=selector, t=key: self.map_button_clicked(s, t)
+            function = lambda _, s=selector, t=key: self.map_button_clicked(s,
+                                                                            t)
             map_button.clicked.connect(function)
         
         top_layout.addWidget(QLabel("Available models"), 0, 0)
@@ -127,21 +152,21 @@ class XMAS(ToolInstance):
         pbonds_layout.addWidget(QLabel("Crosslink models"))
         pbonds_layout.addWidget(self.pbonds_menu)
 
-        buttons_dict = {"Export": self.show_subset_dialog, "Analyze": self.show_analyze_dialog, "Visualize": self.show_visualize_dialog}
+        buttons_dict = {"Export": self.show_subset_dialog,
+                        "Analyze":self.show_analyze_dialog,
+                        "Visualize": self.show_visualize_dialog}
 
         for key in buttons_dict:
             button = QPushButton()
             button.setText(key)
             buttons_layout.addWidget(button)
-            function = lambda _, f=buttons_dict[key]: self.is_selection_empty(f)
+            function = (lambda _, f=buttons_dict[key]:
+                        self.is_selection_empty(f))
             button.clicked.connect(function)
 
         self.integrate_button = QPushButton("Integrate")
         buttons_layout.addWidget(self.integrate_button)
         self.integrate_button.clicked.connect(self.show_integrate_dialog)
-        # For testing:
-        # self.show_integrate_dialog()
-        # End for testing
 
         outer_layout.addLayout(top_layout)
         outer_layout.addLayout(pbonds_layout)
@@ -168,17 +193,15 @@ class XMAS(ToolInstance):
     def show_integrate_dialog(self):
         
         from .z_score import ZScoreSelector
-
+        
         ZScoreSelector(self)
 
 
     def show_visualize_dialog(self, pbs):
 
-        from PyQt5.QtWidgets import QDialog, QVBoxLayout, QCheckBox, QGridLayout, QDialogButtonBox, QLabel
-        import numpy as np
-
         visualize_dialog = self.visualize_dialog = QDialog()
-        visualize_dialog.setWindowTitle("Visualization settings selected pseudobonds") 
+        visualize_dialog.setWindowTitle("Visualization settings selected "
+                                        "pseudobonds") 
 
         outer_layout = QVBoxLayout()
         settings_layout = QGridLayout()
@@ -190,14 +213,17 @@ class XMAS(ToolInstance):
         self.score_policy = "score"
         policies = [self.distance_policy, self.score_policy]
         checkboxes_text = ["Gradient", "Cutoff"]
-        sliders = list(self.make_sliders(pbs, VisualizeSlider, self.visualize_dialog))
+        sliders = list(self.make_sliders(pbs, VisualizeSlider,
+                                         self.visualize_dialog))
         visualize_dialog.sliders = dict(zip(policies, sliders))
-        visualize_dialog.color_keys = dict(zip(policies, [None] * len(policies)))
+        visualize_dialog.color_keys = dict(zip(policies, 
+                                               [None] * len(policies)))
         checkboxes = [None] * len(policies) * len(checkboxes_text)
         for i in range(len(checkboxes)):
             checkboxes[i] = QCheckBox()
         id_couplings = [checkboxes[2], sliders[0], checkboxes[0], sliders[1]]
-        functions = [self.disable_other_gradient, self.show_slider] * len(policies)
+        functions = [self.disable_other_gradient,
+                     self.show_slider] * len(policies)
 
         row = 0
         for i, policy in enumerate(policies):
@@ -217,13 +243,20 @@ class XMAS(ToolInstance):
                 checkbox.never_enabled = False
                 coupled = id_couplings[index]
                 function = functions[index]
-                checkbox.clicked.connect(lambda checked, c=coupled, f=function: self.execute_checkbox_function(checked, c, f))
-            checkboxes[row].clicked.connect(lambda checked, p=policy: self.color_gradient(checked, pbs, p))
+                connected_function = (lambda checked, c=coupled, f=function:
+                                      self.execute_checkbox_function(checked,
+                                                                     c, f))
+                checkbox.clicked.connect(connected_function)
+            checkboxes[row].clicked.connect(lambda checked, p=policy:
+                                            self.color_gradient(checked, pbs,
+                                                                p))
             row += 2
         custom_layout = self.create_custom_layout(pbs)
 
-        apply_cancel = QDialogButtonBox(QDialogButtonBox.Cancel | QDialogButtonBox.Apply)        
-        apply_cancel.clicked.connect(lambda button: self.apply_clicked(button, "Apply"))
+        apply_cancel = QDialogButtonBox(QDialogButtonBox.Cancel 
+                                        | QDialogButtonBox.Apply)        
+        apply_cancel.clicked.connect(lambda button:
+                                     self.apply_clicked(button, "Apply"))
         rejected_objects = [visualize_dialog, apply_cancel]
         for obj in rejected_objects:
             obj.rejected.connect(lambda: self.reset_style(pbs))
@@ -240,12 +273,10 @@ class XMAS(ToolInstance):
 
     def create_custom_layout(self, pbs):
 
-        from chimerax.ui.widgets.color_button import MultiColorButton
-        from PyQt5.QtWidgets import QGridLayout, QLabel, QLineEdit, QSpacerItem, QSizePolicy
-        from PyQt5.QtGui import QDoubleValidator, QIntValidator
-
-        color_button = MultiColorButton(has_alpha_channel=True, max_size=(16,16))
-        color_button2 = MultiColorButton(has_alpha_channel=True, max_size=(16,16))
+        color_button = MultiColorButton(has_alpha_channel=True,
+                                        max_size=(16,16))
+        color_button2 = MultiColorButton(has_alpha_channel=True,
+                                         max_size=(16,16))
 
         visualize_dialog = self.visualize_dialog
 
@@ -263,17 +294,25 @@ class XMAS(ToolInstance):
             elif row_name == visualize_dialog.row_names[1]:
                 color = visualize_dialog.custom_values[row_name][attribute][0]
             button.set_color(color)
-            button.color_changed.connect(lambda rgba: function(rgba, attribute, pbs, None, row_name))
+            button.color_changed.connect(lambda rgba: function(rgba, attribute,
+                                                               pbs, None,
+                                                               row_name))
         
         def radii_edit_function(line_edit, attribute, row_name, function):
             line_edit.setValidator(QDoubleValidator())
             line_edit.setMaximumWidth(50)
-            line_edit.textChanged.connect(lambda text: function(text, attribute, pbs, float, row_name))
+            line_edit.textChanged.connect(lambda text: function(text,
+                                                                attribute, pbs,
+                                                                float,
+                                                                row_name))
 
         def dashes_edit_function(line_edit, attribute, row_name, function):
             line_edit.setValidator(QIntValidator())
             line_edit.setMaximumWidth(50)
-            line_edit.textChanged.connect(lambda text: function(text, attribute, pbs, int, row_name))
+            line_edit.textChanged.connect(lambda text: function(text,
+                                                                attribute,
+                                                                pbs, int,
+                                                                row_name))
 
         layout = QGridLayout()
         labels = ["Color", "Radius", "Dashes (changes complete model(s))"]
@@ -284,11 +323,14 @@ class XMAS(ToolInstance):
             row_names[0]: [color_button, QLineEdit(), QLineEdit()], 
             row_names[1]: [color_button2, QLineEdit(), QLineEdit()]
             }
-        functions = [color_button_function, radii_edit_function, dashes_edit_function]
-        attributes = visualize_dialog.attributes = {"color":"colors", "radius":"radii", "dashes":"dashes"}
+        functions = [color_button_function, radii_edit_function,
+                     dashes_edit_function]
+        attributes = visualize_dialog.attributes = {"color":"colors",
+                                                    "radius":"radii",
+                                                    "dashes":"dashes"}
         cutoff_values = [[170, 0, 0, 255], 0.5]
 
-        # The next part is inelegant, but at least it works now.
+        # The next part is inelegant, but at least it works...
                 
         custom_values = visualize_dialog.custom_values = {}
         for row_name in widget_rows:
@@ -318,7 +360,8 @@ class XMAS(ToolInstance):
                     reset_attribute = attributes[attribute]
                     value = getattr(pbs, reset_attribute)
                     reset_values[attribute] = value
-                functions[j](widget, attribute, row_name, self.change_pseudobonds_style)
+                functions[j](widget, attribute, row_name,
+                             self.change_pseudobonds_style)
 
         spacer = QSpacerItem(0, 0, QSizePolicy.Expanding)
         layout.addItem(spacer, layout.rowCount() - 2, layout.columnCount(), 2)
@@ -326,7 +369,8 @@ class XMAS(ToolInstance):
         return layout 
 
 
-    def change_pseudobonds_style(self, value, attribute, pbs, convert_function=None, row_name=""):
+    def change_pseudobonds_style(self, value, attribute, pbs,
+                                 convert_function=None, row_name=""):
        
         if str(value) == "":
             return
@@ -339,7 +383,8 @@ class XMAS(ToolInstance):
         else:
             row_names = self.visualize_dialog.row_names
             is_cutoff = {row_names[0]: False, row_names[1]: True}
-            self.visualize_dialog.custom_values[row_name][attribute] = [value] * len(pbs)
+            custom_values = self.visualize_dialog.custom_values
+            custom_values[row_name][attribute] = [value] * len(pbs)
             for pb in pbs:
                 if not pb.cutoff == is_cutoff[row_name]:
                     continue
@@ -348,14 +393,9 @@ class XMAS(ToolInstance):
 
     def color_gradient(self, checked, pbs, policy):
 
-        from chimerax.color_key.model import ColorKeyModel
-        from chimerax.core.colors import Colormap
-
         dialog = self.visualize_dialog
         key1 = dialog.row_names[0]
-        print(key1)
         key2 = list(dialog.attributes.keys())[0]
-        print(key2)
         
         if not checked:
             for i, pb in enumerate(pbs):
@@ -371,18 +411,21 @@ class XMAS(ToolInstance):
             return
 
         if policy == self.distance_policy:
-            rgbas = ((1, 1/3 , 1, 1), (5/6, 1/2, 5/6, 1), (2/3, 2/3, 2/3, 1), (1/3, 2/3, 5/6, 1), (0, 2/3, 1, 1))
+            rgbas = ((1, 1/3 , 1, 1), (5/6, 1/2, 5/6, 1), (2/3, 2/3, 2/3, 1),
+                     (1/3, 2/3, 5/6, 1), (0, 2/3, 1, 1))
             slider = dialog.sliders[policy].slider
             maximum = slider.value()[1]
             color_range = 0, maximum
             attribute = "length"
         elif policy == self.score_policy:
-            rgbas = ((1, 0, 0, 1), (1, 1/2, 0, 1), (1, 1, 0, 1), (1/2, 1, 0, 1), (0, 1, 0, 1))
+            rgbas = ((1, 0, 0, 1), (1, 1/2, 0, 1), (1, 1, 0, 1),
+                     (1/2, 1, 0, 1), (0, 1, 0, 1))
             color_range = 0, 200 
             attribute = "xlinkx_score"
 
         color_key = ColorKeyModel(self.session)
-        color_key._rgbas_and_labels = self.get_rgbas_and_labels(rgbas, color_range)
+        color_key._rgbas_and_labels = self.get_rgbas_and_labels(rgbas,
+                                                                color_range)
         color_key._ticks = True
         color_key._tick_thickness = 2
         color_key._label_offset = -15
@@ -479,9 +522,8 @@ class XMAS(ToolInstance):
 
     def remove_files(self):
 
-        from PyQt5.QtWidgets import QTreeWidgetItemIterator
-
-        iterator = QTreeWidgetItemIterator(self.file_selector, QTreeWidgetItemIterator.Selected)
+        iterator = QTreeWidgetItemIterator(self.file_selector,
+                                           QTreeWidgetItemIterator.Selected)
 
         if not iterator.value():
             return
@@ -502,14 +544,13 @@ class XMAS(ToolInstance):
 
     def find_shortest(self, pbs_dict, names):
 
-        from PyQt5.QtCore import Qt
-
         i = 0
 
         for model in pbs_dict:
 
             if not hasattr(model, "XMAS_made"):
-                print("Find shortest option unavailable for %s: model has not been generated with XMAS" % model.name)
+                print("Find shortest option unavailable for %s: model has not "
+                      "been generated with XMAS" % model.name)
                 continue
 
             name = names[i] + "_shortest.pb"
@@ -554,18 +595,15 @@ class XMAS(ToolInstance):
 
     def create_venn(self, pbs_dict, names):
 
-        import matplotlib.pyplot as plt
-
         number_of_groups = len(pbs_dict)
 
         if number_of_groups == 3:
-            from matplotlib_venn import venn3
             function = venn3
         elif number_of_groups == 2:
-            from matplotlib_venn import venn2
             function = venn2
         else:
-            print("Venn diagrams can only be generated for two or three groups")
+            print("Venn diagrams can only be generated for two or three "
+                  "groups")
             return
 
         sets = self.get_plotting_data(pbs_dict, distance=False)
@@ -575,9 +613,6 @@ class XMAS(ToolInstance):
 
 
     def create_distance_plot(self, pbs_dict, names):
-
-        import seaborn as sns
-        import matplotlib.pyplot as plt
 
         distances = self.get_plotting_data(pbs_dict)    
 
@@ -609,13 +644,12 @@ class XMAS(ToolInstance):
         # The user has clicked the file button: with this dialog, 
         # evidence files can be selected
 
-        from PyQt5.QtWidgets import QFileDialog, QTreeWidgetItem
-        from PyQt5.QtCore import Qt
-
         file_dialog = QFileDialog()
         # Set file mode to existing files to enable selection of multiple files
         file_dialog.setFileMode(QFileDialog.ExistingFiles)
-        selected_files, _ = QFileDialog.getOpenFileNames(None, "Select evidence files", "", "Excel (*.xlsx)")
+        get_file_names = QFileDialog.getOpenFileNames
+        selected_files, _ = get_file_names(None, "Select evidence files", "", 
+                                           "Excel (*.xlsx)")
 
         # Create a dictionary containing the evidence files to avoid 
         # showing the same file multiple times
@@ -653,9 +687,6 @@ class XMAS(ToolInstance):
         # so that the number of IDs created corresponds to the number 
         # of newly added files.
 
-        import string
-        import itertools
-
         for i in itertools.count(1):
             for p in itertools.product(string.ascii_uppercase, repeat=i):
                 start -= 1
@@ -675,8 +706,6 @@ class XMAS(ToolInstance):
         # Method to obtain a short name to represent a file or model in
         # the tool
 
-        import re
-
         short_name = re.search("[^/]+\Z", path_to_file).group(0)
 
         return short_name
@@ -686,8 +715,6 @@ class XMAS(ToolInstance):
 
         # The user has clicked the map button: the selected models and 
         # files are extracted from their respective selector treewidgets
-
-        from PyQt5.QtWidgets import QTreeWidgetItemIterator
 
         iterator = QTreeWidgetItemIterator(
             selector, QTreeWidgetItemIterator.Checked)
@@ -725,9 +752,6 @@ class XMAS(ToolInstance):
         # The user has selected one or multiple models and evidence
         # files, and clicked the map button: map crosslinked peptides
 
-        import pandas as pd
-        from PyQt5.QtCore import Qt
-
         # Each checked file is mapped to all checked models
         for j, evidence_file in enumerate(checked_files):
 
@@ -757,7 +781,8 @@ class XMAS(ToolInstance):
                 if (type(peptide_A) != str or type(peptide_B) != str):
                     sequence_info_lacking += 1
                     continue
-                input_pairs.append([sorted([peptide_A, peptide_B]), xlinkx_scores[i]])
+                input_pairs.append([sorted([peptide_A, peptide_B]),
+                                    xlinkx_scores[i]])
                 
             # Print a message when one or multiple peptide pairs lack
             # sequence information
@@ -886,15 +911,15 @@ class XMAS(ToolInstance):
                 if (len(pair[0].alignments) > 0 
                         and len(pair[1].alignments) > 0):
                     number_of_aligned_pairs += 1   
-                    pbonds_unfiltered = [
-                        PrePseudobond(a, b, peptide_pair) for a in pair[0].alignments 
-                        for b in pair[1].alignments
-                        ]
+                    pbonds_unfiltered = [PrePseudobond(a, b, peptide_pair) 
+                                         for a in pair[0].alignments 
+                                         for b in pair[1].alignments]
 
                 if len(pbonds_unfiltered) == 0:
                     continue      
 
-                # Check whether the peptide has pseudobonds for overlapping peptides
+                # Check whether the peptide has pseudobonds for overlapping
+                peptides
                 peptide_pair.has_overlapping = False       
                 for pb in pbonds_unfiltered:
                     if pb.is_overlapping:
@@ -929,7 +954,8 @@ class XMAS(ToolInstance):
                     % pb_file_code)
                 print("Pseudobonds opened from %s" % pb_file_path)
                 # Create a new pseudobonds model
-                created_model = self.create_pseudobonds_model(pbonds, pb_file_path)
+                created_model = self.create_pseudobonds_model(pbonds,
+                                                              pb_file_path)
                 # Store the model and its code in the "created_models"
                 # dictionary
                 if created_model not in self.created_models.keys():
@@ -951,15 +977,21 @@ class XMAS(ToolInstance):
             if len(pbonds_overlapping) > 0:
                 nonself_path = pb_file_path.replace(
                     ".pb", "_overlapping.pb")
-                no_overlapping_nonself = self.write_file(nonself_path, pbonds_overlapping, file_type=".pb overlapping")
+                no_overlapping_nonself = self.write_file(nonself_path,
+                                                         pbonds_overlapping,
+                                                         file_type=".pb overlapping")
             if len(pbonds_overlapping_selflinks) > 0:
                 self_path = pb_file_path.replace(
                     ".pb", "_overlapping_selflinks.pb")
-                no_overlapping_self = self.write_file(self_path, pbonds_overlapping_selflinks, file_type=".pb overlapping")
+                no_overlapping_self = self.write_file(self_path,
+                                                      pbonds_overlapping_selflinks,
+                                                      file_type=".pb overlapping")
             if len(pbonds_overlap_associated) > 0:
                 associated_path = pb_file_path.replace(
                     ".pb", "_overlap_associated.pb")
-                no_overlap_associated = self.write_file(associated_path, pbonds_overlap_associated, file_type=".pb overlapping")
+                no_overlap_associated = self.write_file(associated_path,
+                                                        pbonds_overlap_associated,
+                                                        file_type=".pb overlapping")
                     
             no_overlapping = (no_overlapping_nonself
                 + no_overlapping_self)
@@ -995,8 +1027,13 @@ class XMAS(ToolInstance):
             if len(pbonds_overlap_associated) > 0:
                 associated_path = pb_file_path.replace(
                     ".pb", "_overlap_associated.pb")
-                self.write_file(associated_path, pbonds_overlap_associated, file_type=".pb overlapping")
-                print("%s pseudobonds from non-overlapping peptides belonged to a peptide pair that did yield overlapping peptides for one or more other pseudobonds. These overlap-associated pseudobonds were stored in %s." % (no_overlap_associated, associated_path))
+                self.write_file(associated_path, pbonds_overlap_associated,
+                                file_type=".pb overlapping")
+                print("%s pseudobonds from non-overlapping peptides belonged "
+                      "to a peptide pair that did yield overlapping peptides "
+                      "for one or more other pseudobonds. These "
+                      "overlap-associated pseudobonds were stored in %s." 
+                      % (no_overlap_associated, associated_path))
 
                    
     def create_pseudobonds_model(self, pbonds, file_path):
@@ -1028,8 +1065,6 @@ class XMAS(ToolInstance):
         
         group = self.pb_manager.get_group(name)
         if group.num_pseudobonds > 0:
-            if "re" not in dir():
-                import re
             extension = re.search("\(\d+\)", name)
             if extension is None:
                 extension = ""
@@ -1082,7 +1117,9 @@ class XMAS(ToolInstance):
 
     def get_color(self, color_policy, value, radio_button, cmap):
 
-        if (value > 200 and color_policy == "score" and radio_button == "Gradient"):
+        if (value > 200
+            and color_policy == "score"
+            and radio_button == "Gradient"):
                 value = 200  
 
         if radio_button == "Gradient":
@@ -1154,8 +1191,6 @@ class XMAS(ToolInstance):
         # (De)select models depending on the item (de)selected in the
         # pbonds menu
 
-        from PyQt5.QtCore import Qt
-
         for model in self.session.models:
             if (model.name == item.text(column) 
                     and item.checkState(column) == Qt.Checked):
@@ -1176,27 +1211,29 @@ class XMAS(ToolInstance):
 
     def show_analyze_dialog(self, pbs):
 
-        from PyQt5.QtWidgets import QDialog, QVBoxLayout, QPushButton, QTreeWidget, QTreeWidgetItem, QLabel
-        from PyQt5.QtCore import Qt
-
         self.analyze_dialog = QDialog()
         self.analyze_dialog.setWindowTitle("Analyze selected pseudobonds")
 
         pbs_dict = self.get_pseudobonds_dictionary(pbs)
 
         layout = QVBoxLayout()
-        buttons_dict = {"Find shortest": self.find_shortest, "Plot distances": self.create_distance_plot, "Find overlap": self.create_venn}
+        buttons_dict = {"Find shortest": self.find_shortest,
+                        "Plot distances": self.create_distance_plot,
+                        "Find overlap": self.create_venn}
 
         names_menu = QTreeWidget()
         names_menu.setHeaderLabels(["Model name", "Chosen name"])
-        names_menu.setItemDelegateForColumn(0, NoEditDelegate(self.analyze_dialog))
+        edit_class = NoEditDelegate
+        names_menu.setItemDelegateForColumn(0, 
+                                            edit_class(self.analyze_dialog))
 
         for key in buttons_dict:
             button = QPushButton()
             button.setText(key)
             layout.addWidget(button)
             function = buttons_dict[key]
-            button.clicked.connect(lambda _, f=function: self.get_names(names_menu, pbs_dict, f))
+            button.clicked.connect(lambda _, f=function:
+                                   self.get_names(names_menu, pbs_dict, f))
             
         for model in pbs_dict:
             item = QTreeWidgetItem(names_menu)
@@ -1214,8 +1251,6 @@ class XMAS(ToolInstance):
 
 
     def get_names(self, treewidget, pbs_dict, function):
-
-        from PyQt5.QtWidgets import QTreeWidgetItemIterator
 
         iterator = QTreeWidgetItemIterator(treewidget)
         names = [None]*len(pbs_dict)
@@ -1236,14 +1271,11 @@ class XMAS(ToolInstance):
         # Through this dialog, the user can export a subset of the
         # models selected in the pbonds menu
 
-        from PyQt5.QtWidgets import (QGridLayout, QDialog, QTreeWidget, QTreeWidgetItem, QListWidget, 
-            QListWidgetItem, QPushButton, QHBoxLayout, QComboBox, QCheckBox, QLabel)
-        from PyQt5.QtCore import Qt
-
         layout = QGridLayout()
 
         self.subset_dialog = QDialog()
-        self.subset_dialog.setWindowTitle("Export subset of the selected pseudobonds")
+        self.subset_dialog.setWindowTitle("Export subset of the selected "
+                                          "pseudobonds")
 
         self.dialog_model_selector = QTreeWidget()
         self.dialog_model_selector.setHeaderLabels(["Name", "ID"])
@@ -1270,7 +1302,8 @@ class XMAS(ToolInstance):
             item.setCheckState(Qt.Checked)
             item.setFlags(item.flags() & ~Qt.ItemIsSelectable)
         if len(models) == 1:
-            item = self.link_selector.findItems("Interlinks", Qt.MatchExactly)[0]
+            item = self.link_selector.findItems("Interlinks",
+                                                Qt.MatchExactly)[0]
             item.setCheckState(Qt.Unchecked)
             item.setFlags(Qt.NoItemFlags)     
 
@@ -1293,7 +1326,8 @@ class XMAS(ToolInstance):
         self.checkbox_pb.setChecked(True)
         self.checkbox_disvis = QCheckBox("DisVis")
         self.checkbox_haddock = QCheckBox("HADDOCK")
-        checkboxes = {"Pb":self.checkbox_pb, "DisVis":self.checkbox_disvis, "HADDOCK":self.checkbox_haddock}
+        checkboxes = {"Pb":self.checkbox_pb, "DisVis":self.checkbox_disvis,
+                      "HADDOCK":self.checkbox_haddock}
         
         checkbox_layout = QHBoxLayout()
         for checkbox in checkboxes:
@@ -1319,7 +1353,8 @@ class XMAS(ToolInstance):
 
         self.subset_dialog.setLayout(layout)
         
-        export_button.clicked.connect(lambda: self.export_subset(pbs, checkboxes))
+        export_button.clicked.connect(lambda: self.export_subset(pbs,
+                                                                 checkboxes))
 
         self.subset_dialog.show()
         self.subset_dialog.rejected.connect(lambda: self.display_all(pbs))
@@ -1328,7 +1363,8 @@ class XMAS(ToolInstance):
     def make_sliders(self, pbs, cls=None, dialog=None):
 
         maximum_distance = self.max_pseudobond_distance(pbs)
-        distance_slider = cls("distance", True, 0, maximum_distance, pbs, dialog)
+        distance_slider = cls("distance", True, 0, maximum_distance, pbs,
+                              dialog)
         make_score_slider = True
         for group in pbs.by_group:
             pb = group[1][0]
@@ -1376,8 +1412,6 @@ class XMAS(ToolInstance):
 
     def get_pseudobonds(self):
 
-        from chimerax.atomic.pbgroup import selected_pseudobonds
-
         all_selected_pbs = selected_pseudobonds(self.session)
 
         if len(all_selected_pbs) == 0:
@@ -1413,12 +1447,11 @@ class XMAS(ToolInstance):
 
     def export_subset(self, pseudobonds, checkboxes):
 
-        from PyQt5.QtWidgets import QTreeWidgetItemIterator
-        from PyQt5.QtCore import Qt
-
         checked = True
-
-        model_iterator = QTreeWidgetItemIterator(self.dialog_model_selector, QTreeWidgetItemIterator.Checked)
+        
+        iterator_class = QTreeWidgetItemIterator
+        model_iterator = iterator_class(self.dialog_model_selector,
+                                        iterator_class.Checked)
         if not model_iterator.value():
             print("Please check one or more models")
             checked = False
@@ -1503,13 +1536,13 @@ class XMAS(ToolInstance):
         if number_for_overlap > 1:
             pb_strings = [pb.string() for pb in valid_pseudobonds]
             remove = []
-            for string in pb_strings:
-                if pb_strings.count(string) >= number_for_overlap:
+            for pb_string in pb_strings:
+                if pb_strings.count(pb_string) >= number_for_overlap:
                     continue
-                remove.append(string)
-            for string in remove:
+                remove.append(pb_string)
+            for pb_string in remove:
                 for pb in valid_pseudobonds:
-                    if pb.string() != string:
+                    if pb.string() != pb_string:
                         continue
                     valid_pseudobonds.remove(pb)
                     break
@@ -1532,7 +1565,8 @@ class XMAS(ToolInstance):
             else:
                 self.show_disvis_dialog(models, valid_pseudobonds, pb_lines)
 
-        elif (not checkboxes["Pb"].isChecked() and checkboxes["DisVis"].isChecked()):
+        elif (not checkboxes["Pb"].isChecked()
+              and checkboxes["DisVis"].isChecked()):
             self.show_disvis_dialog(models, valid_pseudobonds)
 
 
@@ -1544,10 +1578,8 @@ class XMAS(ToolInstance):
 
     def save_subset(self, title, extension, lists):
 
-        from PyQt5.QtWidgets import QFileDialog
-        import re
-
-        file_path, _ = QFileDialog.getSaveFileName(self.subset_dialog, title, "", extension)
+        file_path, _ = QFileDialog.getSaveFileName(self.subset_dialog, title, 
+                                                   "", extension)
 
         if file_path == "":
             return
@@ -1564,9 +1596,6 @@ class XMAS(ToolInstance):
 
     def show_disvis_dialog(self, models, pseudobonds, pb_lines=None):
 
-        from PyQt5.QtWidgets import QDialog, QHBoxLayout, QVBoxLayout, QGridLayout, QLabel, QButtonGroup, QRadioButton, QLineEdit, QDialogButtonBox
-        from PyQt5.QtGui import QDoubleValidator
-
         self.disvis_dialog = QDialog(self.subset_dialog)
         self.disvis_dialog.setWindowTitle("Create DisVis input file")
 
@@ -1576,7 +1605,8 @@ class XMAS(ToolInstance):
         distances_layout = QGridLayout()
         outer_layout = QVBoxLayout()
 
-        chain_selection = {"Fix chain:":fix_layout, "Scanning chain:":scanning_layout}
+        chain_selection = {"Fix chain:":fix_layout,
+                           "Scanning chain:":scanning_layout}
         groups = [None] * len(chain_selection)
 
         i = 0  
@@ -1622,7 +1652,8 @@ class XMAS(ToolInstance):
             self.create_disvis_input(chains, distances, pseudobonds, pb_lines)
             self.subset_dialog.close()
 
-        ok_cancel = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)        
+        ok_cancel = QDialogButtonBox(QDialogButtonBox.Ok 
+                                     | QDialogButtonBox.Cancel)        
         ok_cancel.accepted.connect(get_parameters)
         ok_cancel.rejected.connect(self.disvis_dialog.close)  
 
@@ -1634,9 +1665,8 @@ class XMAS(ToolInstance):
         self.disvis_dialog.show()
 
 
-    def create_disvis_input(self, chains, distances, pseudobonds, pb_lines=None):
-
-        import re
+    def create_disvis_input(self, chains, distances, pseudobonds,
+                            pb_lines=None):
 
         minimum = distances["Minimum"].text()
         maximum = distances["Maximum"].text()
@@ -1647,14 +1677,16 @@ class XMAS(ToolInstance):
             atom_strings = [None] * len(atoms)
             replace_with_space = [":", "@"]
             for i, atom in enumerate(atoms):
-                string = re.search("/.+", atom.string(style="command line")).group(0)
+                string = re.search("/.+",
+                                   atom.string(style="command line")).group(0)
                 string = string.replace("/", "")                
                 for character in replace_with_space:
                     string = string.replace(character, " ")
                 atom_strings[i] = string
             if sort:
                 atom_strings.sort()
-            line = atom_strings[0] + " " + atom_strings[1] + " " + minimum + " " + maximum
+            line = (atom_strings[0] + " " + atom_strings[1] + " " + minimum 
+                    + " " + maximum)
 
             return line
 
@@ -1679,9 +1711,11 @@ class XMAS(ToolInstance):
                         current_chain = chains[chain]
                         if atom in current_chain.atoms:
                             atom.chain = current_chain
-                if (atoms[0].chain == chains["Fixed"] and atoms[1].chain == chains["Scanning"]):
+                if (atoms[0].chain == chains["Fixed"] 
+                    and atoms[1].chain == chains["Scanning"]):
                     lines.append(write_line(atom1, atom2))
-                elif (atoms[0].chain == chains["Scanning"] and atoms[1].chain == chains["Fixed"]):
+                elif (atoms[0].chain == chains["Scanning"]
+                      and atoms[1].chain == chains["Fixed"]):
                     lines.append(write_line(atom2, atom1))
 
         if len(lines) == 0:
@@ -1706,9 +1740,6 @@ class XMAS(ToolInstance):
         # the model selector for non-pseudobond structural models, and
         # the pbonds menu for pseudobond models. With this method, both
         # treewidgets of the main tool window can be filled.
-
-        from PyQt5.QtWidgets import QTreeWidgetItem
-        from PyQt5.QtCore import Qt
 
         for model in models:
             self.get_structure_type(model)
@@ -1751,9 +1782,6 @@ class XMAS(ToolInstance):
 
         # Determine which treewidget the model belongs to
 
-        from chimerax.atomic.structure import Structure
-        from chimerax.atomic.pbgroup import PseudobondGroup
-
         # Structural, non-pseudobond models go in the model selector
         if (isinstance(model, Structure) 
                 and not isinstance(model, PseudobondGroup)):
@@ -1772,9 +1800,6 @@ class XMAS(ToolInstance):
         # - models being added to and removed from the session, to be
         # added and removed from the tool window
 
-        from chimerax.core.selection import SELECTION_CHANGED
-        from chimerax.core.models import ADD_MODELS, REMOVE_MODELS
-
         self.triggerset = self.session.triggers
 
         self.change_selection_handler = self.triggerset.add_handler(
@@ -1792,8 +1817,6 @@ class XMAS(ToolInstance):
 
         # Called upon change of model selection, to adjust the
         # CheckState of models in the pbonds menu, if necessary
-
-        from PyQt5.QtCore import Qt
 
         for model in self.session.models:
             # Skip all models that are not in the pbonds menu
@@ -1955,12 +1978,8 @@ class PrePseudobond:
 class Slider:
     
     
-    def __init__(self, value_type="distance", enabled=True, minimum=None, maximum=None, pbs=None):
-        
-        from PyQt5.QtWidgets import QGridLayout, QLabel, QLineEdit
-        from qtrangeslider import QRangeSlider
-        from PyQt5.QtCore import Qt
-        from PyQt5.QtGui import QDoubleValidator
+    def __init__(self, value_type="distance", enabled=True, minimum=None,
+                 maximum=None, pbs=None):
         
         self.enabled = enabled
         self.layout = QGridLayout()
@@ -1991,7 +2010,8 @@ class Slider:
         self.set_full_range(minimum, maximum)
         signal = self.slider.valueChanged
         self.function = None
-        signal.connect(lambda: self.within_range(value_type, pbs, self.function))
+        signal.connect(lambda: self.within_range(value_type, pbs,
+                                                 self.function))
         signal.connect(self.adjust_setters)
         
         self.setters = [setter_min, setter_max]
@@ -2002,9 +2022,11 @@ class Slider:
             setter.setAlignment(alignments[i])
             setter.setValidator(QDoubleValidator())
             setter.setText(texts[i])
-            setter.textEdited.connect(lambda text, m=is_minimum[i]: self.change_slider_value(text, m))
+            setter.textEdited.connect(lambda text, m=is_minimum[i]:
+                                      self.change_slider_value(text, m))
             
-        # Atrribute to make sure that setters are not adjusted when slider is changed due to editing of a setter   
+        # Atrribute to make sure that setters are not adjusted when slider is
+        # changed due to editing of a setter   
         self.no_adjustment = False
 
 
@@ -2021,8 +2043,8 @@ class Slider:
         
         self.slider.setRange(minimum, maximum)
         self.slider.setValue((minimum, maximum))
-        
-        
+                
+                
     def get_slider_values(self, minimum, maximum):
         
         return minimum, maximum
@@ -2043,17 +2065,24 @@ class Slider:
             
         for pb in pbs:
             distance = pb.length
-            wrong_distance = (distance < distance_range[0] or distance > distance_range[1])
+            wrong_distance = (distance < distance_range[0]
+                              or distance > distance_range[1])
             wrong_score = False
             if score_slider.enabled:
                 score = pb.xlinkx_score
-                wrong_score = (score < score_range[0] or score > score_range[1])
+                wrong_score = (score < score_range[0]
+                               or score > score_range[1])
             is_outside_range = (wrong_distance or wrong_score)
             is_within_range[pb] = is_outside_range
             
         function(is_within_range)
-    
-                
+        
+            
+    def get_real_values(self, values):
+        
+        return values    
+            
+                        
     def adjust_setters(self):
         
         # Make sure that setters are not adjusted when slider is changed due to
@@ -2065,13 +2094,8 @@ class Slider:
         values = self.slider.value()
         real_values = self.get_real_values(values)
         for i, setter in enumerate(self.setters):
-            setter.setText(str(real_values[i]))
-            
-            
-    def get_real_values(self, values):
-        
-        return values        
-        
+            setter.setText(str(real_values[i]))  
+    
             
     def change_slider_value(self, text, is_minimum):
         
@@ -2081,21 +2105,22 @@ class Slider:
             return
         
         self.no_adjustment = True
-
+    
         if is_minimum:
             minimum, _ = self.get_slider_values(value, 0)
             maximum = self.slider.value()[1]
         else:
             minimum = self.slider.value()[0]
             _, maximum = self.get_slider_values(0, value)
-  
-        self.slider.setValue((minimum, maximum))
+    
+        self.slider.setValue((minimum, maximum)) 
 
 
 class ExportSlider(Slider):
     
     
-    def __init__(self, value_type="distance", enabled=True, minimum=None, maximum=None, pbs=None, *args):
+    def __init__(self, value_type="distance", enabled=True, minimum=None,
+                 maximum=None, pbs=None, *args):
         
         super().__init__(value_type, enabled, minimum, maximum, pbs)
         self.function = self.display_pseudobonds
@@ -2104,6 +2129,7 @@ class ExportSlider(Slider):
             for widget in self.widgets:
                 widget.setEnabled(False)
             return
+        
     
     def display_pseudobonds(self, display_dict):
         
@@ -2120,7 +2146,8 @@ class ExportSlider(Slider):
 class VisualizeSlider(Slider):
 
     
-    def __init__(self, value_type="distance", enabled=True, minimum=None, maximum=None, pbs=None, dialog=None):
+    def __init__(self, value_type="distance", enabled=True, minimum=None,
+                 maximum=None, pbs=None, dialog=None):
         
         super().__init__(value_type, enabled, minimum, maximum, pbs)
         self.function = self.cutoff_style
@@ -2145,9 +2172,6 @@ class VisualizeSlider(Slider):
                 setattr(pb, attribute, value)
 
 
-
-from PyQt5.QtWidgets import QStyledItemDelegate
-
 class NoEditDelegate(QStyledItemDelegate):
     
     def __init__(self, parent = None):
@@ -2156,8 +2180,6 @@ class NoEditDelegate(QStyledItemDelegate):
     def createEditor(self, parent, option, index):
         return None
 
-
-from chimerax.atomic.molarray import Pseudobonds
 
 class Dashes(Pseudobonds):
 
