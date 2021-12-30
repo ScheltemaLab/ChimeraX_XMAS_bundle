@@ -11,6 +11,8 @@
 # === UCSF ChimeraX Copyright ===
 
 
+        
+from .info_file import InfoFile
 from chimerax.atomic.molarray import Pseudobonds
 from chimerax.atomic.pbgroup import selected_pseudobonds, PseudobondGroup
 from chimerax.atomic.structure import Structure
@@ -27,6 +29,7 @@ import matplotlib.pyplot as plt
 from matplotlib.text import Text
 import numpy as np 
 import operator
+import os
 import pandas as pd
 from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QDoubleValidator, QIntValidator
@@ -71,9 +74,8 @@ class XMAS(ToolInstance):
         # interface. The window isn't shown until its "manage" method 
         # is called.
         self.tool_window = MainToolWindow(self)
-
-        # Method to build and show the main window
-        self._build_ui()
+        
+        self.pb_manager = self.session.pb_manager
 
         # Call trigger handler to take action when certain triggers fire
         self.trigger_handler()
@@ -81,11 +83,12 @@ class XMAS(ToolInstance):
         # Override the "cleanup" method to perform additional actions 
         # upon closing the main tool window
         self.tool_window.cleanup = self.cleanup
-
-        self.pb_manager = self.session.pb_manager
         
         cmap = Colormap(None, ((1, 0, 0, 1), (1, 1, 0, 1), (0, 1, 0, 1)))
         self.score_cmap = cmap.linear_range(0, 200)
+        
+        # Method to build and show the main window
+        self._build_ui()
 
 
     def _build_ui(self):
@@ -612,8 +615,6 @@ class XMAS(ToolInstance):
     def create_venn(self, pbs_dict, names):
 
         number_of_groups = len(pbs_dict)
-        
-        plt = self.create_plot("Venn diagram")
 
         if number_of_groups == 3:
             function = venn3
@@ -623,6 +624,8 @@ class XMAS(ToolInstance):
             print("Venn diagrams can only be generated for two or three "
                   "groups")
             return
+                
+        plt = self.create_plot("Venn diagram")
 
         sets = self.get_plotting_data(pbs_dict, distance=False)
             
@@ -647,6 +650,7 @@ class XMAS(ToolInstance):
         plt.show()
         
         
+        
     def create_plot(self, title):
 
         plt.figure()
@@ -664,7 +668,19 @@ class XMAS(ToolInstance):
         for i, model in enumerate(pbs_dict):
             pbs = pbs_dict[model]
             if distance:
-                values[i] = [pb.length for pb in pbs]
+                files = set()
+                values[i] = [None] * len(pbs)
+                for j, pb in enumerate(pbs):
+                    file = pb.info_file
+                    files.add(file)
+                    distance = pb.length
+                    indices = pb.indices
+                    for index in indices:
+                        file.df.at[index, "Distance"] = distance
+                    values[i][j] = distance
+                for file in files:
+                    file.create_file()
+                    print("Distances updated in %s" % file.path)
             else:
                 values[i] = set(pb.string() for pb in pbs)
 
@@ -794,6 +810,17 @@ class XMAS(ToolInstance):
                 "<br><b>Peptide pair mapping of PD output file: %s</b>" 
                 % evidence_file, is_html=True)
             
+            # Create a file for reference of the results to the evidence file
+            # Create a code for the model with all model IDs and
+            # the evidence file ID that was used
+            model_ids = ",".join([
+                str(model_id) for model_id in checked_models
+                ])
+            file_code = model_ids
+            info_file_path = (os.path.splitext(evidence_file)[0] 
+                              + "_%s.tsv" % file_code)
+            self.info_file = InfoFile(info_file_path)
+            
             # Read the file and extract the peptide pairs from it
             dataframe = pd.read_excel(evidence_file)
             
@@ -807,15 +834,19 @@ class XMAS(ToolInstance):
             sequence_info_lacking = 0
 
             # Peptides within the peptide pairs are sorted, to be able
-            # to remove inversely identical peptide pairs
+            # to remove inversely identical peptide pairs. Store row numbers to
+            # trace the peptide pairs back to the evidence file
+            row_number = 1
             for i in range(len(dataframe.index)):
+                row_number += 1
                 peptide_A = input_peptides_A[i]
                 peptide_B = input_peptides_B[i]
                 if (type(peptide_A) != str or type(peptide_B) != str):
                     sequence_info_lacking += 1
+                    self.info_file.add(row_number, "Sequence lacking")
                     continue
                 input_pairs.append([sorted([peptide_A, peptide_B]),
-                                    xlinkx_scores[i]])
+                                    xlinkx_scores[i], row_number])
                 
             # Print a message when one or multiple peptide pairs lack
             # sequence information
@@ -826,15 +857,16 @@ class XMAS(ToolInstance):
                 print("%s peptide pairs are disregarded due to"
                     % str(sequence_info_lacking),         
                     "lacking sequence information")
-
-            input_pairs_deduplicated = list(self.deduplicate(input_pairs))
+            
+            compare_function = self.advanced_equality_check
+            input_pairs_deduplicated = list(self.deduplicate(input_pairs, 
+                                                             compare_function))
 
             # Print a message stating how many peptide pairs were unique
             number_of_deduplicated = len(input_pairs_deduplicated)
             print("Unique peptide pairs: %s out of %s" 
                 % (number_of_deduplicated, len(input_pairs)))
 
-            # Store all peptide pairs in list of lists
             # Each peptide is stored as a Peptide object, that contains
             # the peptide sequence, the position of the crosslinked
             # residue, and any alignments on the model(s).
@@ -845,7 +877,9 @@ class XMAS(ToolInstance):
                 input_pair = input_pairs_deduplicated[i]
                 peptides = input_pair[0]
                 xlinkx_score = input_pair[1]
-                peptide_pairs[i] = PeptidePair(peptides, xlinkx_score)
+                row_number = input_pair[2]
+                peptide_pairs[i] = PeptidePair(peptides, xlinkx_score, 
+                                               row_number)
 
             # Now we align all peptides to the sequences of all chains
             # open in the ChimeraX session
@@ -929,105 +963,72 @@ class XMAS(ToolInstance):
 
             pbonds_unfiltered = []
             pbonds = []
-            pbonds_overlapping = []
-            pbonds_overlapping_selflinks = []
-            pbonds_overlap_associated = []
 
-            # The number of perfectly aligned peptide pairs is counted
+            # The number of perfectly aligned peptide pairs is counted, as well
+            # as the number of overlapping peptide pairs
             number_of_aligned_pairs = 0
+            no_overlapping = 0
 
             for peptide_pair in peptide_pairs:
             # First select the peptide pairs for which both peptides
             # have alignments. Each possible pseudobond is stored as a
             # PrePseudobond object  
                 pair = peptide_pair.peptides
-                if (len(pair[0].alignments) > 0 
+                row_number = peptide_pair.row_number
+                if not (len(pair[0].alignments) > 0 
                         and len(pair[1].alignments) > 0):
-                    number_of_aligned_pairs += 1   
-                    pbonds_unfiltered = [PrePseudobond(a, b, peptide_pair) 
-                                         for a in pair[0].alignments 
-                                         for b in pair[1].alignments]
+                    self.info_file.add(row_number, "No pseudobonds")
+                    continue
+                number_of_aligned_pairs += 1   
+                pbonds_unfiltered = [PrePseudobond(a, b, peptide_pair) 
+                                     for a in pair[0].alignments 
+                                     for b in pair[1].alignments]
 
                 if len(pbonds_unfiltered) == 0:
                     continue      
 
-                # Check whether the peptide has pseudobonds for overlapping
-                peptides
+                # Check whether the peptide pair has pseudobonds for 
+                # overlapping peptides
                 peptide_pair.has_overlapping = False       
                 for pb in pbonds_unfiltered:
                     if pb.is_overlapping:
                         peptide_pair.has_overlapping = True
                         break
              
-                # Then write pseudobonds in their appropriate
-                # lists.     
+                # Then make a list for pseudobonds that need to be drawn, and
+                # make lines for the info file
                 for pb in pbonds_unfiltered:
+                    line = pb.line
                     if (not pb.is_overlapping and not pb.is_selflink):
                         pbonds.append(pb)
-                        if peptide_pair.has_overlapping:
-                            pbonds_overlap_associated.append(pb)
+                        continue
                     elif (pb.is_overlapping and not pb.is_selflink):
-                        pbonds_overlapping.append(pb)
-                    elif pb.is_selflink:
-                        pbonds_overlapping_selflinks.append(pb)   
+                        self.info_file.add(row_number, line, "Overlapping (non-self)")
+                    elif pb.is_selflink:  
+                        self.info_file.add(row_number, line, "Overlapping (self)")
+                    no_overlapping += 1
             
-            # Print a log message stating how many peptide pairs for
-            # which perfect alignments have been found
+            # Print a log message stating for how many peptide pairs perfect 
+            # alignments have been found
             print("Unique peptide pairs with pseudobonds: %s" 
                 % number_of_aligned_pairs)    
     
             if len(pbonds) > 0:
-                # Create a code for the model with all model IDs and
-                # the evidence file ID that was used
-                model_ids = ",".join([
-                    str(model_id) for model_id in checked_models
-                    ])
-                pb_file_code = model_ids
-                pb_file_path = evidence_file.replace(".xlsx", "_%s.pb"
-                    % pb_file_code)
-                print("Pseudobonds opened from %s" % pb_file_path)
+                pb_file_path = os.path.splitext(info_file_path)[0] + ".pb"
+                print("Pseudobonds are stored in %s" % pb_file_path)
                 # Create a new pseudobonds model
                 created_model = self.create_pseudobonds_model(pbonds,
                                                               pb_file_path)
                 # Store the model and its code in the "created_models"
                 # dictionary
                 if created_model not in self.created_models.keys():
-                    self.created_models[created_model] = pb_file_code
+                    self.created_models[created_model] = file_code
                 # Show the code of this file in the pbonds menu                
                 item = self.pbonds_menu.findItems(
                     created_model, Qt.MatchExactly, column=0)[0]
-                item.setText(1, pb_file_code)
-
-            # Write .pb files for peptide pairs with overlapping
-            # peptides:    
-
-            # Self-links and non-self-links should be stored in
-            # separate files, since ChimeraX cannot open self-links
-
-            no_overlapping_nonself = 0
-            no_overlapping_self = 0   
-
-            if len(pbonds_overlapping) > 0:
-                nonself_path = pb_file_path.replace(
-                    ".pb", "_overlapping.pb")
-                no_overlapping_nonself = self.write_file(nonself_path,
-                                                         pbonds_overlapping,
-                                                         file_type=".pb overlapping")
-            if len(pbonds_overlapping_selflinks) > 0:
-                self_path = pb_file_path.replace(
-                    ".pb", "_overlapping_selflinks.pb")
-                no_overlapping_self = self.write_file(self_path,
-                                                      pbonds_overlapping_selflinks,
-                                                      file_type=".pb overlapping")
-            if len(pbonds_overlap_associated) > 0:
-                associated_path = pb_file_path.replace(
-                    ".pb", "_overlap_associated.pb")
-                no_overlap_associated = self.write_file(associated_path,
-                                                        pbonds_overlap_associated,
-                                                        file_type=".pb overlapping")
-                    
-            no_overlapping = (no_overlapping_nonself
-                + no_overlapping_self)
+                item.setText(1, file_code)
+            else:
+                self.info_file.create_file()
 
             # Print a log message stating how many pseudobonds were
             # not mapped due to overlapping peptides
@@ -1037,36 +1038,9 @@ class XMAS(ToolInstance):
             elif no_overlapping > 1:
                 print("%s pseudobonds were not mapped due to overlapping"
                     % no_overlapping, "peptides." )
-
-            # Tell the user in which files the pseudobonds from
-            # overlapping peptides can be found
-            if (len(pbonds_overlapping) > 0 
-                    and len(pbonds_overlapping_selflinks) == 0):
-                print("These pseudobonds were stored in %s."
-                    % nonself_path)
-            elif (len(pbonds_overlapping) > 0 
-                    and len(pbonds_overlapping_selflinks) > 0):
-                print("%s of these pseudobonds were self-links.\n"
-                    % no_overlapping_self
-                    + "Self-links were stored in %s.\n" 
-                    % self_path
-                    + "The remaining %s pseudobonds were stored in %s."
-                    % (no_overlapping_nonself, nonself_path))
-            elif (len(pbonds_overlapping) == 0
-                    and len(pbonds_overlapping_selflinks) > 0):
-                print("All of these pseudobonds were self-links, "
-                    "and stored in %s." % self_path)
-
-            if len(pbonds_overlap_associated) > 0:
-                associated_path = pb_file_path.replace(
-                    ".pb", "_overlap_associated.pb")
-                self.write_file(associated_path, pbonds_overlap_associated,
-                                file_type=".pb overlapping")
-                print("%s pseudobonds from non-overlapping peptides belonged "
-                      "to a peptide pair that did yield overlapping peptides "
-                      "for one or more other pseudobonds. These "
-                      "overlap-associated pseudobonds were stored in %s." 
-                      % (no_overlap_associated, associated_path))
+                
+            # Print a log message stating where the mapping info is stored
+            print("Mapping information is stored in %s" % info_file_path)
 
                    
     def create_pseudobonds_model(self, pbonds, file_path):
@@ -1079,17 +1053,28 @@ class XMAS(ToolInstance):
             
         for atoms in list(pbs_atoms_dict.keys()):
             new_pb = group.new_pseudobond(atoms[0], atoms[1])
-            new_pb.line = self.create_pb_line(new_pb)
+            line = new_pb.line = self.create_pb_line(new_pb)
             peptide_pairs = new_pb.peptide_pairs = pbs_atoms_dict[atoms]
+            new_pb.info_file = self.info_file
+            new_pb.indices = [None] * len(peptide_pairs)
+            distance = new_pb.length
             max_score = 0
-            for peptide_pair in peptide_pairs:
+            for i, peptide_pair in enumerate(peptide_pairs):
+                if peptide_pair.has_overlapping:
+                    cat = "Overlap associated"
+                else:
+                    cat = ""
+                index = self.info_file.add(peptide_pair.row_number, line, cat, 
+                                           distance)
+                new_pb.indices[i] = index
                 score = peptide_pair.xlinkx_score
                 if score <= max_score:
                     continue
                 max_score = score
             new_pb.xlinkx_score = max_score
-
+            
         self.write_file(file_path, group, file_type=".pb")
+        self.info_file.create_file()
 
         return group.name
 
@@ -1176,19 +1161,6 @@ class XMAS(ToolInstance):
                 rgba8 = [255, 255, 0, 255]
 
         return rgba8
-        
-
-    def deduplicate(self, lst):
-
-        # Method that removes duplicate items from a list
-
-        lst.sort()
-        last = object()
-        for item in lst:
-            if item == last:
-                continue
-            yield item
-            last = item
 
 
     def write_file(self, file_path, group, file_type=".pb"):
@@ -1201,7 +1173,7 @@ class XMAS(ToolInstance):
             pbs = group
 
         lines = [None] * len(pbs)
-        if (file_type == ".pb" or file_type == ".pb overlapping"):
+        if file_type == ".pb":
             for i, pb in enumerate(pbs):
                 pb = pbs[i]
                 lines[i] = pb.line        
@@ -1209,7 +1181,8 @@ class XMAS(ToolInstance):
             for i, pb in enumerate(pbs):
                 lines[i] = pb
 
-        lines_deduplicated = list(self.deduplicate(lines))
+        lines_deduplicated = list(self.deduplicate(lines, 
+                                                   self.simple_equality_check))
 
         created_file = open(file_path, "w")
         for line in lines_deduplicated:
@@ -1222,6 +1195,42 @@ class XMAS(ToolInstance):
             run(self.session, text, log = False)
 
         return len(lines_deduplicated)
+        
+
+    def deduplicate(self, lst, function):
+
+        # Method that removes duplicate items from a list
+
+        lst.sort()
+        last = object()
+        for item in lst:
+            if function(item, last):
+                continue
+            yield item
+            last = item
+            
+            
+    def simple_equality_check(self, item, last):
+        
+        return item == last
+    
+    
+    def advanced_equality_check(self, item, last):
+        
+        is_equal = False
+        
+        # The first 'last' variable is an empty object. Hence, it is not
+        # subscriptable.
+        try:
+            last[0]
+        except:
+            return False
+        
+        if item[0] == last[0]:
+            is_equal = True
+            self.info_file.add(item[2], "Duplicate of %s" % last[2])
+            
+        return is_equal
 
 
     def check_signal(self, item, column):
@@ -1256,8 +1265,8 @@ class XMAS(ToolInstance):
 
         layout = self.analyze_dialog.layout = QVBoxLayout()
         buttons_dict = {"Find shortest": self.find_shortest,
-                        "Plot distances": self.create_distance_plot,
-                        "Find overlap": self.create_venn}
+                        "Find distances": self.create_distance_plot,
+                        "Plot overlap": self.create_venn}
 
         names_menu = QTreeWidget()
         names_menu.setHeaderLabels(["Model name", "Chosen name"])
@@ -1278,7 +1287,7 @@ class XMAS(ToolInstance):
             item.setFlags(item.flags() | Qt.ItemIsEditable)
             text = model.name
             item.setText(0, text)
-            item.setText(1, text.replace(".pb", ""))
+            item.setText(1, os.path.splitext(text)[0])
 
         layout.addWidget(QLabel("")) 
         layout.addWidget(QLabel("Apply different model names (optional):"))
@@ -1940,9 +1949,10 @@ class XMAS(ToolInstance):
 
 class PeptidePair:
     
-    def __init__(self, peptide_pair, xlinkx_score):
+    def __init__(self, peptide_pair, xlinkx_score, row_number):
         self.peptides = [Peptide(peptide_pair[0]), Peptide(peptide_pair[1])]
         self.xlinkx_score = xlinkx_score
+        self.row_number = row_number
 
 
 class Peptide:
@@ -2286,7 +2296,8 @@ class Dashes(Pseudobonds):
             
             
 class DragHandler(object):
-
+    
+    # This class isn't working yet
     
     def __init__(self, figure=None) :
         
