@@ -650,27 +650,6 @@ class XMAS(ToolInstance):
 
             i += 1
 
-    
-    def pbs_atoms(self, pbs, find_shortest=False):
-        
-        length = len(pbs)
-        atom_dict = {}    
-        for i in range(length):
-            pb = pbs[i]
-            if not find_shortest:
-                atom1, atom2 = pb.atom1, pb.atom2
-            else:
-                atom1, atom2 = pb.atoms
-            atoms = sorted([atom1, atom2])
-            atoms = tuple(atoms)
-            if atoms not in atom_dict.keys():
-                atom_dict[atoms] = []
-            if find_shortest:
-                continue
-            atom_dict[atoms].append(pb.peptide_pair)
-
-        return atom_dict
-
 
     def create_venn(self, pbs_dict, names):
 
