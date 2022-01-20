@@ -69,6 +69,10 @@ class ZScoreSelector:
         self.main_dialog.ui_area.setLayout(main_layout)
         self.main_dialog.cleanup = self.cleanup
         self.main_dialog.manage("side")
+        
+        # For testing:
+        # line_edit.setText("C:/Users/ilsel/OneDrive/Documenten/MCLS/Bioinformatics_profile/Integration/disvis_pascal")
+        # use_button.click()
             
 
     def file_dialog(self, line_edit):
@@ -301,7 +305,7 @@ class ZScoreSelector:
         chosen_restraints = []
         
         for pb in self.pbs:
-            if (pb.zscore < values[0] or pb.zscore > values[1]):
+            if pb.outside_range:
                 continue
             pb_line = self.xmas.create_pb_line(pb)
             chosen_restraints.append(pb_line)
@@ -364,21 +368,21 @@ class ZScoreSlider(Slider):
         return minimum, maximum
         
     
-    def within_range(self, value_type, pbs, function=None):
+    def within_range(self, value_type, pbs, function):
         
         # Determine whether the pseudobonds' z-scores are within the specified
         # range
-
+        
+        op = self.get_operators(self)
         score_range = self.slider.value()
         real_range = self.get_real_values(score_range)
-        within_range = {}
+        
         for pb in pbs:
             zscore = pb.zscore
-            is_outside_range = (zscore < real_range[0] 
-                                or zscore > real_range[1])
-            within_range[pb] = is_outside_range
+            is_outside_range = self.check_value(op, zscore, real_range)
+            pb.outside_range = is_outside_range
             
-        self.function(self, within_range)
+        self.function(self, pbs)
         
     
     def get_real_values(self, values):

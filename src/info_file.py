@@ -15,11 +15,12 @@ import pandas as pd
 class InfoFile:
     
     
-    def __init__(self, path):
+    def __init__(self, path, decimal_separator):
         
-        self.columns = ["Row in evidence file", "Pseudobond", "Overlap category", "Distance"]
+        self.columns = ["Row in evidence file", "Pseudobond", "Overlap category", "Distance (Å)"]
         self.df = pd.DataFrame(columns=self.columns)
         self.path = path
+        self.decimal_separator = decimal_separator
     
     
     def add(self, row_number, value, category="", distance=""):
@@ -34,6 +35,5 @@ class InfoFile:
     def create_file(self):
                
         self.df.sort_values(["Row in evidence file", "Pseudobond"], inplace=True)
-        self.df.to_csv(self.path, sep="\t", index=False)
-        
-
+        self.df.to_csv(self.path, sep="\t", index=False, 
+                       decimal=self.decimal_separator)
