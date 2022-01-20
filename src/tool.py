@@ -57,7 +57,8 @@ class XMAS(ToolInstance):
     # Does this instance persist when session closes
     SESSION_ENDURING = False  
     # We do save/restore in sessions  
-    SESSION_SAVE = True                                         
+    SESSION_SAVE = True         
+                                
 
     def __init__(self, session, tool_name):
         # "session"   - chimerax.core.session.Session instance
@@ -648,6 +649,27 @@ class XMAS(ToolInstance):
             group_item.setText(1, model.item.text(1))
 
             i += 1
+
+    
+    def pbs_atoms(self, pbs, find_shortest=False):
+        
+        length = len(pbs)
+        atom_dict = {}    
+        for i in range(length):
+            pb = pbs[i]
+            if not find_shortest:
+                atom1, atom2 = pb.atom1, pb.atom2
+            else:
+                atom1, atom2 = pb.atoms
+            atoms = sorted([atom1, atom2])
+            atoms = tuple(atoms)
+            if atoms not in atom_dict.keys():
+                atom_dict[atoms] = []
+            if find_shortest:
+                continue
+            atom_dict[atoms].append(pb.peptide_pair)
+
+        return atom_dict
 
 
     def create_venn(self, pbs_dict, names):

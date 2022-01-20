@@ -6,7 +6,7 @@ will be displayed without the ChimeraX- prefix.
 -->
 
 <BundleInfo name="ChimeraX-XMAS"
-	    version="1.0.0" package="chimerax.xmas"
+	    version="1.0.1" package="chimerax.xmas"
   	    minSessionVersion="1" maxSessionVersion="1">
 
   <!-- Additional information about bundle source -->
@@ -28,19 +28,14 @@ will be displayed without the ChimeraX- prefix.
   </Categories>
 
   <!-- Dependencies on other ChimeraX/Python packages -->
-  <!-- This example uses functionality from the Tutorial_Command bundle -->
   <Dependencies>
     <Dependency name="ChimeraX-Core" version="~=1.1"/>
     <Dependency name="ChimeraX-UI" version="~=1.0"/>
     <Dependency name="pandas"/>
     <Dependency name="openpyxl"/>
-    <Dependency name="matplotlib_venn"/>
+    <Dependency name="seaborn"/>
+    <Dependency name="qtrangeslider"/>
   </Dependencies>
-
-  <!-- Non-Python files that are part of package -->
-  <DataFiles>
-    <DataFile>docs/user/tools/tutorial.html</DataFile>
-  </DataFiles>
 
   <Classifiers>
     <!-- Development Status should be compatible with bundle version number -->
