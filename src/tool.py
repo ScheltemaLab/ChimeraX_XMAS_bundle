@@ -584,6 +584,10 @@ class XMAS(ToolInstance):
 
     def find_shortest(self, pbs_dict, names):
         
+        if hasattr(self.analyze_dialog, "find_shortest"):
+            return
+        
+        self.analyze_dialog.find_shortest = True
         allow_layout = QHBoxLayout()
         label_front = QLabel("Allow difference of")
         line_edit = QLineEdit()
@@ -597,8 +601,8 @@ class XMAS(ToolInstance):
         ok.accepted.connect(lambda: self.show_shortest(pbs_dict, names,
                                                        line_edit.text()))
         main_layout = self.analyze_dialog.layout
-        main_layout.insertLayout(1, allow_layout)
-        main_layout.insertWidget(2, ok)
+        main_layout.insertLayout(3, allow_layout)
+        main_layout.insertWidget(4, ok)
 
     
     def show_shortest(self, pbs_dict, names, allow_value):
@@ -728,9 +732,10 @@ class XMAS(ToolInstance):
                 file = pb.info_file
                 files.add(file)
                 distance = pb.length
+                distance = str(distance).replace(".", self.decimal_separator)
                 indices = pb.indices
                 for index in indices:
-                    file.df.at[index, "Distance"] = distance
+                    file.df.at[index, "Distance (A)"] = distance
             for file in files:
                 file.create_file()
                 print("Distances updated in %s" % file.path)
@@ -1745,7 +1750,7 @@ class XMAS(ToolInstance):
         if file_path == "":
             return
 
-        file_path = os.path.splitext(file_path)(0)
+        file_path = os.path.splitext(file_path)[0]
         extensions = [".pb", ".txt"]
 
         for i, lst in enumerate(lists):

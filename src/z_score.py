@@ -314,7 +314,7 @@ class ZScoreSelector:
             print("No restraints found for this z-score range")
             return
             
-        path = self.folder + "/Step_2/"
+        path = self.folder + "Selected_restraints/"
         
         if not os.path.exists(path):
             os.makedirs(path)

@@ -17,7 +17,7 @@ class InfoFile:
     
     def __init__(self, path, decimal_separator):
         
-        self.columns = ["Row in evidence file", "Pseudobond", "Overlap category", "Distance (Å)"]
+        self.columns = ["Row in evidence file", "Pseudobond", "Overlap category", "Distance (A)"]
         self.df = pd.DataFrame(columns=self.columns)
         self.path = path
         self.decimal_separator = decimal_separator
