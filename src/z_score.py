@@ -140,7 +140,7 @@ class ZScoreSelector:
             for key in keys:
                 if (line_lower.count(key)) > 0:
                     # Store the name of the chain in a dictionary
-                    disvis_chains[key] = self.find_string("\w+\.pdb", line)
+                    disvis_chains[key] = self.find_string("\S+\.pdb", line)
                     break
                 
         log_file.close()
@@ -173,7 +173,7 @@ class ZScoreSelector:
             index = list(disvis_chains.values()).index(model.name)
             key = list(disvis_chains.keys())[index]
             disvis_chains[key] = model
-            
+        
         return disvis_chains
             
     

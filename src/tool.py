@@ -11,13 +11,17 @@
 # === UCSF ChimeraX Copyright ===
 
 
-        
+      
 from .info_file import InfoFile
+from .matplotlib_venn._venn2 import venn2
+from .matplotlib_venn._venn3 import venn3
+from .mzidentml import parse_xl_peptides
 from chimerax.atomic.molarray import Pseudobonds
 from chimerax.atomic.pbgroup import selected_pseudobonds, PseudobondGroup
 from chimerax.atomic.structure import Structure
 from chimerax.color_key.model import ColorKeyModel
 from chimerax.core.colors import Colormap
+from chimerax.core.commands import run
 from chimerax.core.models import ADD_MODELS, REMOVE_MODELS
 from chimerax.core.selection import SELECTION_CHANGED
 from chimerax.core.tools import ToolInstance
@@ -25,7 +29,6 @@ from chimerax.ui import MainToolWindow
 from chimerax.ui.widgets.color_button import MultiColorButton
 import itertools
 import locale
-from matplotlib_venn import venn2, venn3
 import matplotlib.pyplot as plt
 from matplotlib.text import Text
 import numpy as np 
@@ -46,7 +49,7 @@ from qtrangeslider import QRangeSlider
 import re
 import seaborn as sns
 import string
-
+from venn import venn 
 
 class XMAS(ToolInstance):
     # Inheriting from ToolInstance makes us known to the ChimeraX tool 
@@ -201,8 +204,8 @@ class XMAS(ToolInstance):
         self.add_models(self.session.models)
         
         # For testing:
-        # self.map_crosslinks(["1"], 
-        #                     ["C:/Users/ilsel/OneDrive/Documenten/MCLS/Bioinformatics_profile/Manual/exercise_files/demo.tsv"])
+        self.map_crosslinks(["1"], 
+                            ["C:/Users/ilsel/OneDrive/Documenten/MCLS/Bioinformatics_profile/test_files/full_xlsx.xlsx"])
         # self.integrate_button.click()
 
 
@@ -247,7 +250,7 @@ class XMAS(ToolInstance):
         gradient_group.setExclusive(False)
         for i in range(len(checkboxes)):
             checkboxes[i] = QCheckBox()
-        custom_layout, reset_values = self.create_custom_layout(pbs)
+        lower_layout, reset_values = self.create_lower_layout(pbs)
         gradient_group.buttonToggled.connect(lambda button, checked: 
                                              self.uncheck(button, checked, 
                                                           gradient_group, pbs, 
@@ -273,23 +276,12 @@ class XMAS(ToolInstance):
                 cutoff_box.clicked.connect(lambda checked, s=slider:
                                            self.show_slider(checked, s))
             row += 2
-        
-        # "apply" attribute to control whether the changes are accepted
-        visualize_dialog.apply = False
-        apply_cancel = QDialogButtonBox(QDialogButtonBox.Cancel 
-                                        | QDialogButtonBox.Apply)        
-        apply_cancel.clicked.connect(lambda button:
-                                     self.apply_clicked(button, "Apply"))
-        closing_function = lambda: self.reset_style(pbs, reset_values)
-        visualize_dialog.cleanup = closing_function
-        apply_cancel.rejected.connect(visualize_dialog.destroy)
 
         outer_layout.addWidget(QLabel("Value-based coloring:"))    
         outer_layout.addLayout(settings_layout)
         outer_layout.addWidget(QLabel(""))
         outer_layout.addWidget(QLabel("Customized styling:"))
-        outer_layout.addLayout(custom_layout)
-        outer_layout.addWidget(apply_cancel)
+        outer_layout.addLayout(lower_layout)
         visualize_dialog.ui_area.setLayout(outer_layout)
         visualize_dialog.manage("side")
         
@@ -308,7 +300,7 @@ class XMAS(ToolInstance):
         self.color_gradient(checked, pbs, button.policy, reset_values)
 
 
-    def create_custom_layout(self, pbs):
+    def create_lower_layout(self, pbs):
 
         color_button = MultiColorButton(has_alpha_channel=True,
                                         max_size=(16,16))
@@ -326,7 +318,7 @@ class XMAS(ToolInstance):
                     a1, a2 = pb.atoms
                     new_pb = group.new_pseudobond(a1, a2)
                     new_pb.color = pb.color
-                color = group.single_color
+                color = group.model_color
                 group.delete()
             elif row_name == visualize_dialog.row_names[1]:
                 color = visualize_dialog.custom_values[row_name][attribute][0]
@@ -400,8 +392,25 @@ class XMAS(ToolInstance):
                 functions[j](widget, attribute, row_name,
                              self.change_pseudobonds_style)
 
+        # "apply" attribute to control whether the changes are accepted
+        visualize_dialog.apply = False
+        save_box = QCheckBox("Save pb file")
+        apply_cancel = QDialogButtonBox(QDialogButtonBox.Apply 
+                                        | QDialogButtonBox.Cancel, Qt.Vertical)        
+        apply_cancel.clicked.connect(lambda button:
+                                     self.apply_clicked(button, "Apply", 
+                                                        save_box.checkState(),
+                                                        pbs))
+        closing_function = lambda: self.reset_style(pbs, reset_values)
+        visualize_dialog.cleanup = closing_function
+        apply_cancel.rejected.connect(visualize_dialog.destroy)
+        
         spacer = QSpacerItem(0, 0, QSizePolicy.Expanding)
-        layout.addItem(spacer, layout.rowCount() - 2, layout.columnCount(), 2)
+        no_cols = layout.columnCount()
+        layout.addItem(spacer, 1, no_cols, 1, 2)
+        layout.addItem(spacer, 2, no_cols - 1, 1, 2)
+        layout.addWidget(save_box, 2, layout.columnCount())
+        layout.addWidget(apply_cancel, 1, layout.columnCount(), 2, 1)
 
         return layout, reset_values
 
@@ -506,10 +515,21 @@ class XMAS(ToolInstance):
         return rgbas_and_labels
 
 
-    def apply_clicked(self, button, text):
+    def apply_clicked(self, button, text, checkstate, pbs):
         
         if button.text() != text:
             return
+        
+        if checkstate == Qt.Checked:
+            title = "Save pseudobond styles"
+            extension = "*.pb"
+            file_path, _ = QFileDialog.getSaveFileName(None, 
+                                                       title, "", extension)
+            if file_path != "":
+                models = [group[0].id_string for group in pbs.by_group]
+                spec = "#" + ",".join(models)
+                for model in models:
+                    run(self.session, "save \"%s\" %s" % (file_path, spec))
         
         self.visualize_dialog.apply = True
         self.visualize_dialog.destroy()
@@ -659,32 +679,50 @@ class XMAS(ToolInstance):
 
         number_of_groups = len(pbs_dict)
 
-        if number_of_groups == 3:
-            function = venn3
-        elif number_of_groups == 2:
-            function = venn2
+        if (number_of_groups == 2 or number_of_groups == 3):
+            function = self.venn_matplotlib
+        elif (number_of_groups > 3 and number_of_groups < 7):
+            function = self.venn_venn
         else:
-            print("Venn diagrams can only be generated for two or three "
-                  "groups")
+            print("Venn diagrams can only be plotted for two to six groups")
             return
-                
-        plt = self.create_plot("Venn diagram")
 
         sets = self.get_plotting_data(pbs_dict, distance=False)
-            
-        function(sets, tuple(names))
+        
+        function(sets, names)
+        self.create_plot("Venn diagram")
+        plt.show()
         
         # To do: make the labels in the Venn diagram draggable
         # self.drag_handler = DragHandler(plt.gcf())
         
-        plt.show()
+    
+    def venn_matplotlib(self, sets, names):
+        
+        if len(sets) == 2:
+            function = venn2
+        else:
+            function = venn3
+            
+        function(sets, tuple(names))
+        
+    
+    def venn_venn(self, sets, names):
+        
+        data = {}
+        
+        for i, name in enumerate(names):
+            data[name] = sets[i]
+            
+        venn(data)
 
 
     def create_distance_plot(self, pbs_dict, names):
 
         distances = self.get_plotting_data(pbs_dict)    
         
-        plt = self.create_plot("Distance plot")
+        plt.figure()
+        self.create_plot("Distance plot")
         sns.set(style="whitegrid")
         sns.boxenplot(data=distances, orient="h")
         sns.stripplot(data=distances, orient="h", size=4, color="gray")
@@ -692,17 +730,13 @@ class XMAS(ToolInstance):
         plt.yticks(plt.yticks()[0], names)
         plt.tight_layout()
         plt.show()
-        
-        
+          
         
     def create_plot(self, title):
 
-        plt.figure()
         plt.ion()
-        figure = plt.gcf()
-        figure.canvas.set_window_title(title)
-        
-        return plt        
+        manager = plt.get_current_fig_manager()
+        manager.set_window_title(title)
 
 
     def get_plotting_data(self, pbs_dict, distance=True):
@@ -751,7 +785,7 @@ class XMAS(ToolInstance):
         file_dialog.setFileMode(QFileDialog.ExistingFiles)
         get_file_names = QFileDialog.getOpenFileNames
         selected_files, _ = get_file_names(None, "Select evidence files", "", 
-                                           "Evidence File (*.tsv *.xlsx)")
+                                           "Evidence File (*.mzid *.tsv *.xlsx)")
 
         # Create a dictionary containing the evidence files to avoid 
         # showing the same file multiple times
@@ -847,7 +881,54 @@ class XMAS(ToolInstance):
                 # "map_crosslinks" method
                 if not self.missing_data:
                     self.map_crosslinks(self.checked_models, checked_files)
+                    
 
+    def read_mzidentml(self, evidence_file):
+        
+        xlinks = parse_xl_peptides(evidence_file)
+        
+        input_peptides_A = self.get_input_peptides(xlinks, "A")
+        input_peptides_B = self.get_input_peptides(xlinks, "B")
+        scores = [xlink.MaxXlinkScore for xlink in xlinks]
+        references = [xlink.Id for xlink in xlinks]
+        
+        return input_peptides_A, input_peptides_B, scores, references
+        
+        
+    def get_input_peptides(self, xlinks, letter):
+        
+        sequences = [getattr(xlink, "Sequence" + letter) for xlink in xlinks]
+        positions = [getattr(xlink, "XLinkPosition" + letter) for xlink in xlinks]
+        input_peptides = [None] * len(sequences)
+        for i, seq in enumerate(sequences):
+            pos = positions[i] - 1
+            peptide = seq[:pos] + "[" + seq[pos] + "]" + seq[pos + 1:]
+            input_peptides[i] = peptide
+            
+        return input_peptides
+    
+    
+    def read_tabular(self, evidence_file):
+        
+        if evidence_file.endswith(".xlsx"):
+            dataframe = pd.read_excel(evidence_file)
+        else:
+            dataframe = pd.read_csv(evidence_file, sep="\t", header=0,
+                                    decimal=self.decimal_separator)
+            if not dataframe["Max. XlinkX Score"].dtypes == "float64":
+                decimal_separator = {".": ",", 
+                                     ",": "."}[self.decimal_separator]
+                dataframe = pd.read_csv(evidence_file, sep="\t", header=0,
+                                        decimal=decimal_separator)
+                
+        # Write the required values from the dataframe in lists
+        input_peptides_A = dataframe["Sequence A"].tolist()
+        input_peptides_B = dataframe["Sequence B"].tolist()
+        scores = dataframe["Max. XlinkX Score"].tolist()
+        references = [i for i in range(2, len(dataframe.index) + 2)]
+        
+        return input_peptides_A, input_peptides_B, scores, references
+    
 
     def map_crosslinks(self, checked_models, checked_files):
         
@@ -863,19 +944,17 @@ class XMAS(ToolInstance):
                 "<br><b>Peptide pair mapping of PD evidence file: %s</b>" 
                 % evidence_file, is_html=True)
             
-            
-            
             # Read the file and extract the peptide pairs from it
-            if evidence_file.endswith(".xlsx"):
-                dataframe = pd.read_excel(evidence_file)
+            if evidence_file.endswith(".mzid"):
+                read_function = self.read_mzidentml
+                
             else:
-                dataframe = pd.read_csv(evidence_file, sep="\t", header=0,
-                                        decimal=self.decimal_separator)
-                if not dataframe["Max. XlinkX Score"].dtypes == "float64":
-                    decimal_separator = {".": ",", 
-                                         ",": "."}[self.decimal_separator]
-                    dataframe = pd.read_csv(evidence_file, sep="\t", header=0,
-                                            decimal=decimal_separator)
+                read_function = self.read_tabular
+                
+            (input_peptides_A,
+             input_peptides_B,
+             xlinkx_scores,
+             references) = read_function(evidence_file)
                     
             # Create a file for reference of the results to the evidence file
             # Create a code for the model with all model IDs and
@@ -887,11 +966,6 @@ class XMAS(ToolInstance):
             info_file_path = (os.path.splitext(evidence_file)[0] 
                               + "_%s.tsv" % file_code)
             self.info_file = InfoFile(info_file_path, self.decimal_separator)
-            
-            # Write the required values from the dataframe in lists
-            input_peptides_A = dataframe["Sequence A"].tolist()
-            input_peptides_B = dataframe["Sequence B"].tolist()
-            xlinkx_scores = dataframe["Max. XlinkX Score"].tolist()
 
             input_pairs = []
             # Keep track of peptide pairs with lacking sequence
@@ -901,12 +975,11 @@ class XMAS(ToolInstance):
             # Peptides within the peptide pairs are sorted, to be able
             # to remove inversely identical peptide pairs. Store row numbers to
             # trace the peptide pairs back to the evidence file
-            row_number = 1
-            for i in range(len(dataframe.index)):
-                row_number += 1
+            for i in range(len(input_peptides_A)):
                 peptide_A = input_peptides_A[i]
                 peptide_B = input_peptides_B[i]
                 peptides = [peptide_A, peptide_B]
+                ref = references[i]
                 lacking = False
                 for peptide in peptides:
                     try:
@@ -920,10 +993,10 @@ class XMAS(ToolInstance):
                         break
                 if lacking:
                     sequence_info_lacking += 1
-                    self.info_file.add(row_number, "Sequence lacking")
+                    self.info_file.add(ref, "Sequence lacking")
                     continue
                 input_pairs.append([sorted([peptide_A, peptide_B]),
-                                    xlinkx_scores[i], row_number])
+                                    xlinkx_scores[i], ref])
                 
             # Print a message when one or multiple peptide pairs lack
             # sequence information
@@ -935,6 +1008,8 @@ class XMAS(ToolInstance):
                     % str(sequence_info_lacking),         
                     "lacking sequence information")
             
+            # Make sure that the highest score is taken in case of duplicates
+            self.duplicate_scores = {}
             compare_function = self.advanced_equality_check
             input_pairs_deduplicated = list(self.deduplicate(input_pairs, 
                                                              compare_function))
@@ -953,10 +1028,14 @@ class XMAS(ToolInstance):
             for i in range(number_of_deduplicated):
                 input_pair = input_pairs_deduplicated[i]
                 peptides = input_pair[0]
-                xlinkx_score = input_pair[1]
-                row_number = input_pair[2]
+                ref = input_pair[2]
+                if ref in self.duplicate_scores.keys():
+                    scores = self.duplicate_scores[ref]
+                    xlinkx_score = self.map_max_score(scores)
+                else:
+                    xlinkx_score = float(input_pair[1])
                 peptide_pairs[i] = PeptidePair(peptides, xlinkx_score, 
-                                               row_number)
+                                               ref)
 
             # Now we align all peptides to the sequences of all chains
             # open in the ChimeraX session
@@ -1051,10 +1130,10 @@ class XMAS(ToolInstance):
             # have alignments. Each possible pseudobond is stored as a
             # PrePseudobond object  
                 pair = peptide_pair.peptides
-                row_number = peptide_pair.row_number
+                ref = peptide_pair.ref
                 if not (len(pair[0].alignments) > 0 
                         and len(pair[1].alignments) > 0):
-                    self.info_file.add(row_number, "No pseudobonds")
+                    self.info_file.add(ref, "No pseudobonds")
                     continue
                 number_of_aligned_pairs += 1   
                 pbonds_unfiltered = [PrePseudobond(a, b, peptide_pair) 
@@ -1080,10 +1159,10 @@ class XMAS(ToolInstance):
                         pbonds.append(pb)
                         continue
                     elif (pb.is_overlapping and not pb.is_selflink):
-                        self.info_file.add(row_number, line, 
+                        self.info_file.add(ref, line, 
                                            "Overlapping (non-self)")
                     elif pb.is_selflink:  
-                        self.info_file.add(row_number, line, 
+                        self.info_file.add(ref, line, 
                                            "Overlapping (self)")
                     no_overlapping += 1
             
@@ -1110,6 +1189,18 @@ class XMAS(ToolInstance):
 
             # Print a log message stating where the mapping info is stored
             print("Mapping information is stored in %s" % info_file_path)
+            
+            
+    def map_max_score(self, scores):
+        
+        max_score = 0
+        
+        for score in scores:
+            if float(score) <= max_score:
+                continue
+            max_score = score
+            
+        return max_score
 
                    
     def create_pseudobonds_model(self, pbonds, file_path):
@@ -1149,7 +1240,7 @@ class XMAS(ToolInstance):
                     cat = "Overlap associated"
                 else:
                     cat = "Not overlap associated"
-                index = self.info_file.add(peptide_pair.row_number, line, cat, 
+                index = self.info_file.add(peptide_pair.ref, line, cat, 
                                            distance)
                 new_pb.indices[i] = index
                 score = peptide_pair.xlinkx_score
@@ -1290,8 +1381,7 @@ class XMAS(ToolInstance):
         created_file.close()
         
         if (file_type == "export" and file_path[-3:] == ".pb"):
-            from chimerax.core.commands import run
-            text = "open %s" % file_path
+            text = "open \"%s\"" % file_path
             run(self.session, text, log = False)
 
         return len(lines_deduplicated)
@@ -1328,7 +1418,11 @@ class XMAS(ToolInstance):
         
         if item[0] == last[0]:
             is_equal = True
-            self.info_file.add(item[2], "Duplicate of %s" % last[2])
+            ref = last[2]
+            if ref not in self.duplicate_scores.keys():
+                self.duplicate_scores[ref] = [last[1]]
+            self.duplicate_scores[ref].append(item[1])
+            self.info_file.add(item[2], "Duplicate of %s" % ref)
             
         return is_equal
 
@@ -2044,10 +2138,10 @@ class XMAS(ToolInstance):
 
 class PeptidePair:
     
-    def __init__(self, peptide_pair, xlinkx_score, row_number):
+    def __init__(self, peptide_pair, xlinkx_score, ref):
         self.peptides = [Peptide(peptide_pair[0]), Peptide(peptide_pair[1])]
-        self.xlinkx_score = float(xlinkx_score)
-        self.row_number = row_number
+        self.xlinkx_score = xlinkx_score
+        self.ref = ref
 
 
 class Peptide:

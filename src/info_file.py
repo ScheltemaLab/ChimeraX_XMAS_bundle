@@ -27,7 +27,7 @@ class InfoFile:
         
         data = [[row_number, value, category, distance]]
         df_add = pd.DataFrame(data, columns=self.columns)
-        self.df = self.df.append(df_add, ignore_index=True)
+        self.df = pd.concat([self.df, df_add], ignore_index=True)
         
         return len(self.df.index) - 1
         
