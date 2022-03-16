@@ -69,10 +69,6 @@ class ZScoreSelector:
         self.main_dialog.ui_area.setLayout(main_layout)
         self.main_dialog.cleanup = self.cleanup
         self.main_dialog.manage("side")
-        
-        # For testing:
-        # line_edit.setText("C:/Users/ilsel/OneDrive/Documenten/MCLS/Bioinformatics_profile/Integration/disvis_pascal")
-        # use_button.click()
             
 
     def file_dialog(self, line_edit):
@@ -96,7 +92,7 @@ class ZScoreSelector:
         if self.folder == "/":
             return
         
-        number_of_pbs, disvis_chains = self.read_log()
+        disvis_chains = self.read_log()
                           
         extensions = [disvis_chains["fix"], disvis_chains["scan"], ".mrc"]
         for extension in extensions:
@@ -105,9 +101,8 @@ class ZScoreSelector:
                 run(self.session, command)
                 
         disvis_chains = self.get_chains(disvis_chains)
-                
-        zscore_path = self.folder + "z-score.out"
-        zscores = self.get_zscores(zscore_path, "\S+(?=\n)")
+               
+        zscores = self.get_zscores()
         
         input_path = list(self.get_files(".txt"))[0]
         self.pbs = self.make_pbs(input_path, disvis_chains, zscores)
@@ -129,14 +124,17 @@ class ZScoreSelector:
         # scanning chain from the DisVis log file
         
         log_path = self.folder + "disvis.log"
-        log_file = open(log_path, "r")
+        try:
+            log_file = open(log_path, "r")
+            self.grid = True
+        except:
+            self.grid = False
+            return {"fix": "fixed_chain.pdb",
+                    "scan": "scanning_chain.pdb"}
         keys = "fix", "scan"
         disvis_chains = {}
         for line in log_file:
             line_lower = line.lower()
-            if not line_lower.count("pdb") > 0:
-                if line_lower.count("distance") > 0:
-                    number_of_pbs = self.find_string("\d+(?=\n)", line)
             for key in keys:
                 if (line_lower.count(key)) > 0:
                     # Store the name of the chain in a dictionary
@@ -144,7 +142,7 @@ class ZScoreSelector:
                     break
                 
         log_file.close()
-        return number_of_pbs, disvis_chains
+        return disvis_chains
         
         
     def find_string(self, search_string, whole_string):
@@ -177,13 +175,28 @@ class ZScoreSelector:
         return disvis_chains
             
     
-    def get_zscores(self, path, search_string):
+    def get_zscores(self):
         
-        # Doesn't work if you use file instead of open(path, "r)
-        zscores = [None] * sum(1 for line in open(path, "r"))
-        file = open(path, "r")
-        for i, line in enumerate(file):
-            zscores[i] = float(self.find_string(search_string, line))
+        if self.grid:
+            zscore_path = self.folder + "z-score.out"
+            # Doesn't work if you use file instead of open(path, "r)
+            zscores = [None] * sum(1 for line in open(zscore_path, "r"))
+            file = open(zscore_path, "r")
+            for i, line in enumerate(file):
+                zscores[i] = float(self.find_string("\S+(?=\n)", line))
+                
+        else:
+            zscore_path = self.folder + "results.html"
+            zscores = []
+            file = open(zscore_path, "r")
+            for line in file:
+                strings = re.findall("<td>[^<]+</td>\s+<td>[^<]+</td>\s+<td>[^<]+</td>\s+<td>[^<]+</td>\s+<td>[^<]+</td>", line)
+                if len(strings) != 1:
+                    continue
+                string = strings[0]
+                zscore = float(self.find_string("[-\.0-9]+(?=</td>\Z)", 
+                               string))
+                zscores.append(zscore)
         
         file.close()            
         return zscores   
@@ -356,6 +369,16 @@ class ZScoreSlider(Slider):
         self.add = -minimum
         super().__init__(value_type, enabled, minimum, maximum, pbs)
         self.function = ExportSlider.display_pseudobonds
+        
+        
+    def get_initial_texts(self, minimum, maximum):
+        
+        return self.scale(minimum, maximum)
+        
+        
+    def scale(self, minimum, maximum):
+        
+        return minimum, round(maximum + 0.001, 3)
     
         
     def get_slider_values(self, minimum, maximum):

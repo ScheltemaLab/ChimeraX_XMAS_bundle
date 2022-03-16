@@ -15,7 +15,7 @@
 from .info_file import InfoFile
 from .matplotlib_venn._venn2 import venn2
 from .matplotlib_venn._venn3 import venn3
-from .mzidentml import parse_xl_peptides
+from .read_evidence import Evidence
 from chimerax.atomic.molarray import Pseudobonds
 from chimerax.atomic.pbgroup import selected_pseudobonds, PseudobondGroup
 from chimerax.atomic.structure import Structure
@@ -28,13 +28,11 @@ from chimerax.core.tools import ToolInstance
 from chimerax.ui import MainToolWindow
 from chimerax.ui.widgets.color_button import MultiColorButton
 import itertools
-import locale
 import matplotlib.pyplot as plt
 from matplotlib.text import Text
 import numpy as np 
 import operator
 import os
-import pandas as pd
 from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QDoubleValidator, QIntValidator
 from PyQt5.QtWidgets import (QVBoxLayout, QGridLayout, QHBoxLayout,
@@ -91,10 +89,6 @@ class XMAS(ToolInstance):
         
         cmap = Colormap(None, ((1, 0, 0, 1), (1, 1, 0, 1), (0, 1, 0, 1)))
         self.score_cmap = cmap.linear_range(0, 200)
-        
-        # Get the system's decimal separator
-        locale.setlocale(locale.LC_ALL, '')
-        self.decimal_separator = locale.localeconv()["decimal_point"]
         
         # Method to build and show the main window
         self._build_ui()
@@ -202,11 +196,6 @@ class XMAS(ToolInstance):
         # Add models open in session to the window with the "add_models"
         # method 
         self.add_models(self.session.models)
-        
-        # For testing:
-        self.map_crosslinks(["1"], 
-                            ["C:/Users/ilsel/OneDrive/Documenten/MCLS/Bioinformatics_profile/test_files/full_xlsx.xlsx"])
-        # self.integrate_button.click()
 
 
     def show_integrate_dialog(self):
@@ -633,7 +622,7 @@ class XMAS(ToolInstance):
 
             if not hasattr(model, "XMAS_made"):
                 print("Find shortest option unavailable for %s: model has not "
-                      "been generated with XMAS" % model.name)
+                      "been generated in-session with XMAS" % model.name)
                 continue
 
             name = names[i] + "_shortest.pb"
@@ -766,7 +755,6 @@ class XMAS(ToolInstance):
                 file = pb.info_file
                 files.add(file)
                 distance = pb.length
-                distance = str(distance).replace(".", self.decimal_separator)
                 indices = pb.indices
                 for index in indices:
                     file.df.at[index, "Distance (A)"] = distance
@@ -785,7 +773,8 @@ class XMAS(ToolInstance):
         file_dialog.setFileMode(QFileDialog.ExistingFiles)
         get_file_names = QFileDialog.getOpenFileNames
         selected_files, _ = get_file_names(None, "Select evidence files", "", 
-                                           "Evidence File (*.mzid *.tsv *.xlsx)")
+                                           "Evidence File (*.csv *.mzid *.tsv "
+                                           "*.txt *.xlsx)")
 
         # Create a dictionary containing the evidence files to avoid 
         # showing the same file multiple times
@@ -881,53 +870,6 @@ class XMAS(ToolInstance):
                 # "map_crosslinks" method
                 if not self.missing_data:
                     self.map_crosslinks(self.checked_models, checked_files)
-                    
-
-    def read_mzidentml(self, evidence_file):
-        
-        xlinks = parse_xl_peptides(evidence_file)
-        
-        input_peptides_A = self.get_input_peptides(xlinks, "A")
-        input_peptides_B = self.get_input_peptides(xlinks, "B")
-        scores = [xlink.MaxXlinkScore for xlink in xlinks]
-        references = [xlink.Id for xlink in xlinks]
-        
-        return input_peptides_A, input_peptides_B, scores, references
-        
-        
-    def get_input_peptides(self, xlinks, letter):
-        
-        sequences = [getattr(xlink, "Sequence" + letter) for xlink in xlinks]
-        positions = [getattr(xlink, "XLinkPosition" + letter) for xlink in xlinks]
-        input_peptides = [None] * len(sequences)
-        for i, seq in enumerate(sequences):
-            pos = positions[i] - 1
-            peptide = seq[:pos] + "[" + seq[pos] + "]" + seq[pos + 1:]
-            input_peptides[i] = peptide
-            
-        return input_peptides
-    
-    
-    def read_tabular(self, evidence_file):
-        
-        if evidence_file.endswith(".xlsx"):
-            dataframe = pd.read_excel(evidence_file)
-        else:
-            dataframe = pd.read_csv(evidence_file, sep="\t", header=0,
-                                    decimal=self.decimal_separator)
-            if not dataframe["Max. XlinkX Score"].dtypes == "float64":
-                decimal_separator = {".": ",", 
-                                     ",": "."}[self.decimal_separator]
-                dataframe = pd.read_csv(evidence_file, sep="\t", header=0,
-                                        decimal=decimal_separator)
-                
-        # Write the required values from the dataframe in lists
-        input_peptides_A = dataframe["Sequence A"].tolist()
-        input_peptides_B = dataframe["Sequence B"].tolist()
-        scores = dataframe["Max. XlinkX Score"].tolist()
-        references = [i for i in range(2, len(dataframe.index) + 2)]
-        
-        return input_peptides_A, input_peptides_B, scores, references
     
 
     def map_crosslinks(self, checked_models, checked_files):
@@ -937,24 +879,18 @@ class XMAS(ToolInstance):
 
         # Each checked file is mapped to all checked models
         for j, evidence_file in enumerate(checked_files):
+            
+            # Read the file and extract the peptide pairs and search engine 
+            # from it
+            evidence = Evidence(evidence_file)
+            input_pairs = evidence.peptide_pairs
+            engine = evidence.engine
 
             # Display bold log message to signify which file is being
             # mapped
             self.session.logger.info(
-                "<br><b>Peptide pair mapping of PD evidence file: %s</b>" 
-                % evidence_file, is_html=True)
-            
-            # Read the file and extract the peptide pairs from it
-            if evidence_file.endswith(".mzid"):
-                read_function = self.read_mzidentml
-                
-            else:
-                read_function = self.read_tabular
-                
-            (input_peptides_A,
-             input_peptides_B,
-             xlinkx_scores,
-             references) = read_function(evidence_file)
+                "<br><b>Peptide pair mapping of %s evidence file: %s</b>" 
+                % (engine, evidence_file), is_html=True)
                     
             # Create a file for reference of the results to the evidence file
             # Create a code for the model with all model IDs and
@@ -962,233 +898,227 @@ class XMAS(ToolInstance):
             model_ids = ",".join([
                 str(model_id) for model_id in checked_models
                 ])
-            file_code = model_ids
+            self.file_code = model_ids
             info_file_path = (os.path.splitext(evidence_file)[0] 
-                              + "_%s.tsv" % file_code)
-            self.info_file = InfoFile(info_file_path, self.decimal_separator)
+                              + "_%s.tsv" % self.file_code)
+            self.info_file = InfoFile(info_file_path, engine)
 
-            input_pairs = []
             # Keep track of peptide pairs with lacking sequence
             # information
             sequence_info_lacking = 0
+            
+            complete_input_pairs = []
 
-            # Peptides within the peptide pairs are sorted, to be able
-            # to remove inversely identical peptide pairs. Store row numbers to
-            # trace the peptide pairs back to the evidence file
-            for i in range(len(input_peptides_A)):
-                peptide_A = input_peptides_A[i]
-                peptide_B = input_peptides_B[i]
-                peptides = [peptide_A, peptide_B]
-                ref = references[i]
-                lacking = False
-                for peptide in peptides:
-                    try:
-                        float(peptide)
-                        lacking = True
-                        break
-                    except:
-                        if not peptide == "":
-                            continue
-                        lacking = True
-                        break
-                if lacking:
+            for peptide_pair in input_pairs:
+                if (peptide_pair.SequenceA == "" 
+                        or peptide_pair.SequenceB == ""):
                     sequence_info_lacking += 1
-                    self.info_file.add(ref, "Sequence lacking")
+                    self.info_file.add(peptide_pair.Ref, 
+                                       "Sequence lacking/decoy")
                     continue
-                input_pairs.append([sorted([peptide_A, peptide_B]),
-                                    xlinkx_scores[i], ref])
+                complete_input_pairs.append(peptide_pair)
                 
             # Print a message when one or multiple peptide pairs lack
             # sequence information
             if sequence_info_lacking == 1:
-                print("1 Peptide pair is disregarded due to lacking "
-                    "sequence information")
+                print("1 Peptide pair is disregarded due to lacking/decoy "
+                      "sequence")
             elif sequence_info_lacking >= 1:
                 print("%s Peptide pairs are disregarded due to"
-                    % str(sequence_info_lacking),         
-                    "lacking sequence information")
+                      % str(sequence_info_lacking),
+                      "lacking/decoy sequence")
             
             # Make sure that the highest score is taken in case of duplicates
             self.duplicate_scores = {}
             compare_function = self.advanced_equality_check
-            input_pairs_deduplicated = list(self.deduplicate(input_pairs, 
-                                                             compare_function))
+            peptide_pairs = list(self.deduplicate(complete_input_pairs,
+                                                       compare_function))
 
             # Print a message stating how many peptide pairs were unique
-            number_of_deduplicated = len(input_pairs_deduplicated)
+            number_of_deduplicated = len(peptide_pairs)
             print("Unique peptide pairs: %s out of %s" 
-                % (number_of_deduplicated, len(input_pairs)))
-
-            # Each peptide is stored as a Peptide object, that contains
-            # the peptide sequence, the position of the crosslinked
-            # residue, and any alignments on the model(s).
-
-            peptide_pairs = [None] * number_of_deduplicated
+                % (number_of_deduplicated, len(complete_input_pairs)))
 
             for i in range(number_of_deduplicated):
-                input_pair = input_pairs_deduplicated[i]
-                peptides = input_pair[0]
-                ref = input_pair[2]
-                if ref in self.duplicate_scores.keys():
-                    scores = self.duplicate_scores[ref]
-                    xlinkx_score = self.map_max_score(scores)
-                else:
-                    xlinkx_score = float(input_pair[1])
-                peptide_pairs[i] = PeptidePair(peptides, xlinkx_score, 
-                                               ref)
-
-            # Now we align all peptides to the sequences of all chains
-            # open in the ChimeraX session
-            #
-            # The peptide sequences are compared to the sequences
-            # string of all chains. The index of a crosslinked residue
-            # on the sequence string is always different than its
-            # "number" attribute of the corresponding Residue object in
-            # ChimeraX, since numbering Residue objects commences with
-            # the number 1 or higher, instead of 0. To ensure that the
-            # right residue number is used in the .pb file, the first
-            # residue number of each chain is stored, which is then
-            # added to the index found on the sequence string.
-            # Furthermore, some residues are present in the sequence
-            # string, but their Residue objects are not shown in the
-            # Chimerax structure. These Residue objects are of type
-            # NoneType, and ChimeraX does not enable creating
-            # pseudobonds between NoneType residues. To prevent adding
-            # these crosslinks to the .pb file, the positions of all
-            # NoneType residues is also stored.
-
-            for model in self.session.models:
-                model_id = model.id_string
-                if model_id not in checked_models:
+                peptide_pair = peptide_pairs[i]
+                ref = peptide_pair.Ref
+                if ref not in self.duplicate_scores.keys():
                     continue
-                for chain in model.chains:
-                    # Keep track of the number of NoneType residues at
-                    # the start of the sequence. These will influence
-                    # the first residue number         
-                    preceding_nonetypes = 0
-                    first_residue_number_found = False
-                    chain_sequence = chain.characters
-                    nonetype_positions = []
-                    residues = chain.residues
-                    for i, residue in enumerate(residues):
-                        if (residue is None 
-                                and not first_residue_number_found):
-                            preceding_nonetypes += 1
-                            nonetype_positions.append(i)
-                        elif (residue is None 
-                                and first_residue_number_found):
-                            nonetype_positions.append(i)
-                        elif (residue is not None 
-                                and not first_residue_number_found):
-                            first_residue_number = (
-                                residue.number - preceding_nonetypes)
-                            first_residue_number_found = True
-                    # Loop all peptide sequences over the chain to find
-                    # perfect alignments
-                    for peptide_pair in peptide_pairs:
-                        for peptide in peptide_pair.peptides:
-                            peptide_sequence = peptide.sequence
-                            peptide_length = len(peptide_sequence)
-                            for start in range(
-                                    len(chain_sequence) - peptide_length + 1):
-                                end = start + peptide_length
-                                # If the crosslinked residue is not
-                                # present in the structure, the
-                                # pseudobond cannot be mapped, and
-                                # therefore we will disregard this
-                                # alignment                                
-                                crosslink_position = (
-                                    start + peptide.crosslink_position)
-                                if crosslink_position in nonetype_positions:
-                                    continue
-                                if (chain_sequence[start:end] 
-                                        == peptide_sequence):
-                                    alignment = Alignment(
-                                        start, end, first_residue_number, 
-                                        crosslink_position, model_id,
-                                        chain)
-                                    peptide.alignments.append(alignment)                    
-
-            # Continue with creating all valid pseudobonds for all
-            # peptide pairs and store them in a list. If both peptides
-            # of a pair are aligned on the same chain, these alignments
-            # are checked for overlap. Make separate lists for peptide
-            # pairs with non-overlapping peptides and those with
-            # overlapping peptides. Overlapping peptides can be
-            # categorized as nonself-links and selflinks
-
-            pbonds_unfiltered = []
-            pbonds = []
-
-            # The number of perfectly aligned peptide pairs is counted, as well
-            # as the number of overlapping peptide pairs
-            number_of_aligned_pairs = 0
-            no_overlapping = 0
-
-            for peptide_pair in peptide_pairs:
-            # First select the peptide pairs for which both peptides
-            # have alignments. Each possible pseudobond is stored as a
-            # PrePseudobond object  
-                pair = peptide_pair.peptides
-                ref = peptide_pair.ref
-                if not (len(pair[0].alignments) > 0 
-                        and len(pair[1].alignments) > 0):
-                    self.info_file.add(ref, "No pseudobonds")
-                    continue
-                number_of_aligned_pairs += 1   
-                pbonds_unfiltered = [PrePseudobond(a, b, peptide_pair) 
-                                     for a in pair[0].alignments 
-                                     for b in pair[1].alignments]
-
-                if len(pbonds_unfiltered) == 0:
-                    continue      
-
-                # Check whether the peptide pair has pseudobonds for 
-                # overlapping peptides
-                peptide_pair.has_overlapping = False       
-                for pb in pbonds_unfiltered:
-                    if pb.is_overlapping:
-                        peptide_pair.has_overlapping = True
-                        break
-             
-                # Then make a list for pseudobonds that need to be drawn, and
-                # make lines for the info file
-                for pb in pbonds_unfiltered:
-                    line = pb.line
-                    if (not pb.is_overlapping and not pb.is_selflink):
-                        pbonds.append(pb)
-                        continue
-                    elif (pb.is_overlapping and not pb.is_selflink):
-                        self.info_file.add(ref, line, 
-                                           "Overlapping (non-self)")
-                    elif pb.is_selflink:  
-                        self.info_file.add(ref, line, 
-                                           "Overlapping (self)")
-                    no_overlapping += 1
+                scores = self.duplicate_scores[ref]
+                peptide_pair.Score = self.map_max_score(scores)
+                
+            self.align_peptides(peptide_pairs, checked_models)
             
-            # Print a log message stating for how many peptide pairs perfect 
-            # alignments have been found
-            print("Unique peptide pairs with pseudobonds: %s" 
-                % number_of_aligned_pairs)    
-    
-            if len(pbonds) > 0:
-                pb_file_path = os.path.splitext(info_file_path)[0] + ".pb"
-                # Create a new pseudobonds model
-                created_model = self.create_pseudobonds_model(pbonds,
-                                                              pb_file_path)
-                # Store the model and its code in the "created_models"
-                # dictionary
-                if created_model not in self.created_models.keys():
-                    self.created_models[created_model] = file_code
-                # Show the code of this file in the pbonds menu                
-                item = self.pbonds_menu.findItems(
-                    created_model, Qt.MatchExactly, column=0)[0]
-                item.setText(1, file_code)
-            else:
-                self.info_file.create_file()
+            
+    def align_peptides(self, peptide_pairs, checked_models):
 
-            # Print a log message stating where the mapping info is stored
-            print("Mapping information is stored in %s" % info_file_path)
+        # Now we align all peptides to the sequences of all chains
+        # open in the ChimeraX session
+        #
+        # The peptide sequences are compared to the sequences
+        # string of all chains. The index of a crosslinked residue
+        # on the sequence string is always different than its
+        # "number" attribute of the corresponding Residue object in
+        # ChimeraX, since numbering Residue objects commences with
+        # the number 1 or higher, instead of 0. To ensure that the
+        # right residue number is used in the .pb file, the first
+        # residue number of each chain is stored, which is then
+        # added to the index found on the sequence string.
+        # Furthermore, some residues are present in the sequence
+        # string, but their Residue objects are not shown in the
+        # Chimerax structure. These Residue objects are of type
+        # NoneType, and ChimeraX does not enable creating
+        # pseudobonds between NoneType residues. To prevent adding
+        # these crosslinks to the .pb file, the positions of all
+        # NoneType residues is also stored.
+
+        for model in self.session.models:
+            model_id = model.id_string
+            if model_id not in checked_models:
+                continue
+            for chain in model.chains:
+                # Keep track of the number of NoneType residues at
+                # the start of the sequence. These will influence
+                # the first residue number         
+                preceding_nonetypes = 0
+                first_residue_number_found = False
+                chain_sequence = chain.characters
+                nonetype_positions = []
+                residues = chain.residues
+                for i, residue in enumerate(residues):
+                    if (residue is None 
+                            and not first_residue_number_found):
+                        preceding_nonetypes += 1
+                        nonetype_positions.append(i)
+                    elif (residue is None 
+                            and first_residue_number_found):
+                        nonetype_positions.append(i)
+                    elif (residue is not None 
+                            and not first_residue_number_found):
+                        first_residue_number = (
+                            residue.number - preceding_nonetypes)
+                        first_residue_number_found = True
+                # Loop all peptide sequences over the chain to find
+                # perfect alignments
+                for peptide_pair in peptide_pairs:
+                    peptide_sequences = peptide_pair.get_info()
+                    crosslink_positions = peptide_pair.get_info("XLinkPosition")
+                    letters = ["A", "B"]
+                    for i, peptide_sequence in enumerate(peptide_sequences):
+                        peptide_length = len(peptide_sequence)
+                        for start in range(
+                                len(chain_sequence) - peptide_length + 1):
+                            end = start + peptide_length
+                            # If the crosslinked residue is not
+                            # present in the structure, the
+                            # pseudobond cannot be mapped, and
+                            # therefore we will disregard this
+                            # alignment                                
+                            crosslink_position = (
+                                start + crosslink_positions[i])
+                            if crosslink_position in nonetype_positions:
+                                continue
+                            if (chain_sequence[start:end] 
+                                    == peptide_sequence):
+                                alignment = Alignment(
+                                    start, end, first_residue_number, 
+                                    crosslink_position, model_id,
+                                    chain)
+                                alignments = getattr(peptide_pair, 
+                                                     "Alignments" 
+                                                     + letters[i])
+                                alignments.append(alignment)  
+                                
+        self.create_pseudobonds(peptide_pairs)
+            
+            
+    def create_pseudobonds(self, peptide_pairs):
+
+        # Continue with creating all valid pseudobonds for all
+        # peptide pairs and store them in a list. If both peptides
+        # of a pair are aligned on the same chain, these alignments
+        # are checked for overlap. Make separate lists for peptide
+        # pairs with non-overlapping peptides and those with
+        # overlapping peptides. Overlapping peptides can be
+        # categorized as nonself-links and selflinks
+
+        pbonds_unfiltered = []
+        pbonds = []
+
+        # The number of perfectly aligned peptide pairs is counted, as well
+        # as the number of overlapping peptide pairs
+        number_of_aligned_pairs = 0
+        no_overlapping = 0
+
+        for peptide_pair in peptide_pairs:
+        # First select the peptide pairs for which both peptides
+        # have alignments. Each possible pseudobond is stored as a
+        # PrePseudobond object  
+            ref = peptide_pair.Ref
+            if not (len(peptide_pair.AlignmentsA) > 0 
+                    and len(peptide_pair.AlignmentsB) > 0):
+                self.info_file.add(ref, "No pseudobonds")
+                continue
+            number_of_aligned_pairs += 1   
+            pbonds_unfiltered = [PrePseudobond(a, b, peptide_pair) 
+                                 for a in peptide_pair.AlignmentsA 
+                                 for b in peptide_pair.AlignmentsB]
+
+            if len(pbonds_unfiltered) == 0:
+                continue      
+
+            # Check whether the peptide pair has pseudobonds for 
+            # overlapping peptides
+            peptide_pair.has_overlapping = False       
+            for pb in pbonds_unfiltered:
+                if pb.is_overlapping:
+                    peptide_pair.has_overlapping = True
+                    break
+         
+            # Then make a list for pseudobonds that need to be drawn, and
+            # make lines for the info file
+            for pb in pbonds_unfiltered:
+                line = pb.line
+                if (not pb.is_overlapping and not pb.is_selflink):
+                    pbonds.append(pb)
+                    continue
+                elif (pb.is_overlapping and not pb.is_selflink):
+                    self.info_file.add(ref, line, 
+                                       "Overlapping (non-self)")
+                elif pb.is_selflink:  
+                    self.info_file.add(ref, line, 
+                                       "Overlapping (self)")
+                no_overlapping += 1
+        
+        # Print a log message stating for how many peptide pairs perfect 
+        # alignments have been found
+        print("Unique peptide pairs with pseudobonds: %s" 
+            % number_of_aligned_pairs)
+        
+        info_file_path = self.info_file.path
+        
+        self.create_files(pbonds, info_file_path)  
+
+        # Print a log message stating where the mapping info is stored
+        print("Mapping information is stored in %s" % info_file_path)
+            
+            
+    def create_files(self, pbonds, info_file_path):
+        if len(pbonds) > 0:
+            pb_file_path = os.path.splitext(info_file_path)[0] + ".pb"
+            # Create a new pseudobonds model
+            created_model = self.create_pseudobonds_model(pbonds,
+                                                          pb_file_path)
+            # Store the model and its code in the "created_models"
+            # dictionary
+            if created_model not in self.created_models.keys():
+                self.created_models[created_model] = self.file_code
+            # Show the code of this file in the pbonds menu                
+            item = self.pbonds_menu.findItems(
+                created_model, Qt.MatchExactly, column=0)[0]
+            item.setText(1, self.file_code)
+        else:
+            self.info_file.create_file()
             
             
     def map_max_score(self, scores):
@@ -1229,7 +1159,6 @@ class XMAS(ToolInstance):
             new_pb.info_file = self.info_file
             new_pb.indices = [None] * len(peptide_pairs)
             distance = new_pb.length
-            distance = str(distance).replace(".", self.decimal_separator)
             max_score = 0
             has_peptide_pairs = False
             for i, peptide_pair in enumerate(peptide_pairs):
@@ -1240,10 +1169,10 @@ class XMAS(ToolInstance):
                     cat = "Overlap associated"
                 else:
                     cat = "Not overlap associated"
-                index = self.info_file.add(peptide_pair.ref, line, cat, 
+                index = self.info_file.add(peptide_pair.Ref, line, cat, 
                                            distance)
                 new_pb.indices[i] = index
-                score = peptide_pair.xlinkx_score
+                score = peptide_pair.Score
                 if score <= max_score:
                     continue
                 max_score = score
@@ -1390,8 +1319,10 @@ class XMAS(ToolInstance):
     def deduplicate(self, lst, function):
 
         # Method that removes duplicate items from a list
-
-        lst.sort()
+        if function == self.simple_equality_check:
+            lst.sort()
+        else:
+            lst.sort(key=operator.attrgetter("SequenceA", "SequenceB"))
         last = object()
         for item in lst:
             if function(item, last):
@@ -1409,22 +1340,25 @@ class XMAS(ToolInstance):
         
         is_equal = False
         
-        # The first 'last' variable is an empty object. Hence, it is not
-        # subscriptable.
+        # The first 'last' variable is an empty object. Hence, it has no 
+        # attributes
         try:
-            last[0]
+            last.SequenceA
         except:
             return False
         
-        if item[0] == last[0]:
+        item_peptides = item.get_info()
+        last_peptides = last.get_info()
+        
+        if item_peptides == last_peptides:
             is_equal = True
-            ref = last[2]
+            ref = last.Ref
             if ref not in self.duplicate_scores.keys():
-                self.duplicate_scores[ref] = [last[1]]
-            self.duplicate_scores[ref].append(item[1])
-            self.info_file.add(item[2], "Duplicate of %s" % ref)
+                self.duplicate_scores[ref] = [last.Score]
+            self.duplicate_scores[ref].append(item.Score)
+            self.info_file.add(item.Ref, "Duplicate of %s" % ref)
             
-        return is_equal
+        return is_equal      
 
 
     def check_signal(self, item, column):
@@ -2136,34 +2070,6 @@ class XMAS(ToolInstance):
         self.triggerset.remove_handler(self.remove_model_handler)
 
 
-class PeptidePair:
-    
-    def __init__(self, peptide_pair, xlinkx_score, ref):
-        self.peptides = [Peptide(peptide_pair[0]), Peptide(peptide_pair[1])]
-        self.xlinkx_score = xlinkx_score
-        self.ref = ref
-
-
-class Peptide:
-
-    
-    def __init__(self, peptide):
-
-        # From each peptide, the sequence and the position of the
-        # crosslinked residue is stored. Furthermore, any alignments on
-        # model structures can be stored.
-
-        if peptide.count("[") == 1:
-            self.sequence = peptide.replace("[", "").replace("]", "")
-            self.crosslink_position = peptide.index("[")    
-        # When the crosslinked residue is the first residue in the
-        # sequence, the sequence contains no brackets
-        else:
-            self.sequence = peptide
-            self.crosslink_position = 0
-        self.alignments = []
-
-
 class Alignment:
     
 
@@ -2203,7 +2109,7 @@ class PrePseudobond:
         self.atom1 = alignment1.atom
         self.atom2 = alignment2.atom        
         self.peptide_pair = peptide_pair
-        self.xlinkx_score = peptide_pair.xlinkx_score
+        self.score = peptide_pair.Score
         # A string is created that will be one line in a .pb file
         self.line = self.create_pb_line()
         # Check for overlap between the two alignments
@@ -2257,7 +2163,7 @@ class Slider:
         if value_type == "distance":
             title = "Pseudobond distance (Å)"
         elif value_type == "score":
-            title = "Max. XLinkX score"
+            title = "Score"
         elif value_type == "zscore":
             title = "z-score"
         label = QLabel(title + ":")
@@ -2284,6 +2190,8 @@ class Slider:
         if not enabled:
             return
         
+        minimum, maximum = self.scale(minimum, maximum)
+        
         self.set_full_range(minimum, maximum)
         signal = self.slider.valueChanged
         self.function = None
@@ -2296,12 +2204,12 @@ class Slider:
         
         self.setters = [setter_min, setter_max]
         alignments = [Qt.AlignRight, Qt.AlignLeft]
-        texts = [str(minimum), str(maximum)]
+        texts = self.get_initial_texts(minimum, maximum)
         is_minimum = [True, False]
         for i, setter in enumerate(self.setters):
             setter.setAlignment(alignments[i])
             setter.setValidator(QDoubleValidator())
-            setter.setText(texts[i])
+            setter.setText(str(texts[i]))
             setter.textEdited.connect(lambda text, m=is_minimum[i]:
                                       self.change_slider_value(text, m))
                 
@@ -2310,7 +2218,25 @@ class Slider:
         # Atrribute to make sure that setters are not adjusted when slider is
         # changed due to editing of a setter   
         self.no_adjustment = False
-
+        
+        
+    def get_initial_texts(self, minimum, maximum):
+        
+        texts = self.get_real_values([minimum, maximum])
+        
+        return texts
+        
+        
+    def scale(self, minimum, maximum):
+        
+        self.scaling = 1
+        if maximum <= 1:
+            self.scaling = 1000
+        minimum = minimum * self.scaling
+        maximum = maximum * self.scaling + 1
+        
+        return minimum, maximum
+    
 
     def set_full_range(self, minimum, maximum):
         
@@ -2324,7 +2250,7 @@ class Slider:
             return
         
         self.slider.setRange(minimum, maximum)
-        self.slider.setValue((minimum, maximum))
+        self.slider.setValue((minimum, maximum))         
                 
                 
     def get_slider_values(self, minimum, maximum):
@@ -2349,7 +2275,7 @@ class Slider:
         # checkbox is checked.
         if distance_slider.enabled:
             dist_op = self.get_operators(distance_slider)
-            distance_range = self.get_real_values(distance_slider.slider.value())
+            distance_range = [float(setter.text()) for setter in distance_slider.setters]
                 
             for pb in pbs:
                 distance = pb.length
@@ -2365,7 +2291,7 @@ class Slider:
             return
             
         score_op = self.get_operators(score_slider)
-        score_range = self.get_real_values(score_slider.slider.value())
+        score_range = [float(setter.text()) for setter in score_slider.setters]
         for pb in pbs:
             score = pb.xlinkx_score
             wrong_score = self.check_value(score_op, score, score_range)
@@ -2397,7 +2323,12 @@ class Slider:
             
     def get_real_values(self, values):
         
-        return values    
+        if self.scaling == 1:
+            dtype = int
+        else:
+            dtype = float
+            
+        return [dtype(value / self.scaling) for value in values]
             
                         
     def adjust_setters(self):

@@ -12,15 +12,22 @@
 
 import pandas as pd
 
+ref_columns = {"Proteome Discoverer": "Row in evidence file",
+               "pLink": "Peptide_Order",
+              "Xi": "PeptidePairID",
+              "Xi_alternative": "PSMID",
+              "mzIdentML": "Peptide id"}
+
 class InfoFile:
     
     
-    def __init__(self, path, decimal_separator):
+    def __init__(self, path, engine):
         
-        self.columns = ["Row in evidence file", "Pseudobond", "Overlap category", "Distance (A)"]
+        self.ref_column = ref_columns[engine]
+        self.columns = [self.ref_column, "Pseudobond", "Overlap category", 
+                        "Distance (A)"]
         self.df = pd.DataFrame(columns=self.columns)
         self.path = path
-        self.decimal_separator = decimal_separator
     
     
     def add(self, row_number, value, category="", distance=""):
@@ -34,6 +41,5 @@ class InfoFile:
     
     def create_file(self):
                
-        self.df.sort_values(["Row in evidence file", "Pseudobond"], inplace=True)
-        self.df.to_csv(self.path, sep="\t", index=False, 
-                       decimal=self.decimal_separator)
+        self.df.sort_values([self.ref_column, "Pseudobond"], inplace=True)
+        self.df.to_csv(self.path, sep="\t", index=False)
