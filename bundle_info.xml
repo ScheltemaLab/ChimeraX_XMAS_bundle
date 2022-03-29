@@ -6,7 +6,7 @@ will be displayed without the ChimeraX- prefix.
 -->
 
 <BundleInfo name="ChimeraX-XMAS"
-	    version="1.0.5" package="chimerax.xmas"
+	    version="1.0.6" package="chimerax.xmas"
   	    minSessionVersion="1" maxSessionVersion="1">
 
   <!-- Additional information about bundle source -->
@@ -35,7 +35,6 @@ will be displayed without the ChimeraX- prefix.
     <Dependency name="openpyxl"/>
     <Dependency name="seaborn"/>
     <Dependency name="qtrangeslider"/>
-    <Dependency name="venn"/>
   </Dependencies>
 
   <Classifiers>

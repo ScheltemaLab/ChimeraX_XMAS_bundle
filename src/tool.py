@@ -47,7 +47,6 @@ from qtrangeslider import QRangeSlider
 import re
 import seaborn as sns
 import string
-from venn import venn 
 
 class XMAS(ToolInstance):
     # Inheriting from ToolInstance makes us known to the ChimeraX tool 
@@ -196,6 +195,11 @@ class XMAS(ToolInstance):
         # Add models open in session to the window with the "add_models"
         # method 
         self.add_models(self.session.models)
+        
+        # For testing:
+        self.map_crosslinks(["1"], [r"C:\Users\ilsel\OneDrive\Documenten\MCLS\Bioinformatics_profile\Presentation\Replicate1.xlsx",
+                                    r"C:\Users\ilsel\OneDrive\Documenten\MCLS\Bioinformatics_profile\Presentation\Replicate2.xlsx",
+                                    r"C:\Users\ilsel\OneDrive\Documenten\MCLS\Bioinformatics_profile\Presentation\Replicate3.xlsx"])
 
 
     def show_integrate_dialog(self):
@@ -668,44 +672,21 @@ class XMAS(ToolInstance):
 
         number_of_groups = len(pbs_dict)
 
-        if (number_of_groups == 2 or number_of_groups == 3):
-            function = self.venn_matplotlib
-        elif (number_of_groups > 3 and number_of_groups < 7):
-            function = self.venn_venn
+        if number_of_groups == 2:
+            function = venn2
+        elif number_of_groups == 3:
+            function = venn3
         else:
-            print("Venn diagrams can only be plotted for two to six groups")
+            print("Venn diagrams can only be plotted for two or three groups")
             return
 
         sets = self.get_plotting_data(pbs_dict, distance=False)
         
-        function(sets, names)
-        self.create_plot("Venn diagram")
-        plt.show()
-        
-        # To do: make the labels in the Venn diagram draggable
-        # self.drag_handler = DragHandler(plt.gcf())
-        
-    
-    def venn_matplotlib(self, sets, names):
-        
-        if len(sets) == 2:
-            function = venn2
-        else:
-            function = venn3
-            
         function(sets, tuple(names))
+        self.create_plot("Venn diagram")
+        plt.show()    
         
-    
-    def venn_venn(self, sets, names):
-        
-        data = {}
-        
-        for i, name in enumerate(names):
-            data[name] = sets[i]
             
-        venn(data)
-
-
     def create_distance_plot(self, pbs_dict, names):
 
         distances = self.get_plotting_data(pbs_dict)    
