@@ -195,11 +195,6 @@ class XMAS(ToolInstance):
         # Add models open in session to the window with the "add_models"
         # method 
         self.add_models(self.session.models)
-        
-        # For testing:
-        self.map_crosslinks(["1"], [r"C:\Users\ilsel\OneDrive\Documenten\MCLS\Bioinformatics_profile\Presentation\Replicate1.xlsx",
-                                    r"C:\Users\ilsel\OneDrive\Documenten\MCLS\Bioinformatics_profile\Presentation\Replicate2.xlsx",
-                                    r"C:\Users\ilsel\OneDrive\Documenten\MCLS\Bioinformatics_profile\Presentation\Replicate3.xlsx"])
 
 
     def show_integrate_dialog(self):
