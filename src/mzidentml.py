@@ -1,3 +1,18 @@
+# Copyright 2022 Scheltema LAB
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+
 from .read_evidence import PeptidePair
 import re
 import xml.dom.minidom as minidom
@@ -24,6 +39,7 @@ class XlPeptide(PeptidePair):
         if (rcv.NumCSMs > don.NumCSMs):
             don.NumCSMs = rcv.NumCSMs
         return don
+    
 
     def as_dictionary(self):
         return {"Ref" : self.Ref,
@@ -47,12 +63,14 @@ class XlPeptide(PeptidePair):
             "NumCSMs" : self.NumCSMs,
             "AlignmentsA": self.AlignmentsA,
             "AlignmentsB": self.AlignmentsB}
+    
 
 class DBSequence:
     def __init__(self):
        self.Accession = ""
        self.Id = ""
        self.ProteinDescription = ""
+       
 
 class XlPeptideEvidence:
     def __init__(self):
@@ -61,15 +79,19 @@ class XlPeptideEvidence:
         self.Id = ""
         self.End = 0
         self.Start = 0
+        
 
 class XlSpectrumIdentification:
     def __init__(self):
         self.PeptideRef = ""
         self.Score = ""
         self.SpectraCount = 1
+        
 
-# For some reason mzidentml use their unique sequence id insead of input accession id
-# This function returns dictionaty with ID as key from which we can find protein accession and description if needed
+# For some reason mzIdentML uses their unique sequence id insead of input 
+# accession id
+# This function returns dictionary with ID as key, from which we can find 
+# protein accession and description if needed
 def parse_sequence_dbs(mzidentfile):
     doc = minidom.parse(mzidentfile)
     db_sequences = {}
@@ -83,7 +105,9 @@ def parse_sequence_dbs(mzidentfile):
         db_sequences[sq.Id] = sq
     return db_sequences
 
-# Only real purpose to read this data blob is to find to which protein  the peptide belongs to and it's location in sequence
+
+# Only real purpose to read this data blob is to find to which protein the 
+# peptide belongs and its location in sequence
 def parse_xl_peptides_evidence(mzidentfile):
     doc = minidom.parse(mzidentfile)
     evidences = {}
@@ -99,10 +123,12 @@ def parse_xl_peptides_evidence(mzidentfile):
             evidences[ev.PeptideRef] = ev
     return evidences
 
-# Store the best Xlink score and CSM count from spectra hits
+
+# Store the best crosslink score and CSM count from spectra hits
 def parse_spectrum_identification_result(mzidentfile):
 
-    # Helper function to extract info for both x-link peptides. DON has index 0 and RCV index 1.
+    # Helper function to extract info for both x-link peptides. DON has index 0 
+    # and RCV index 1.
     def extract_info (specindex, best_spectra_match):
         xlspecid = XlSpectrumIdentification()
         xlspecid.PeptideRef = spec_id[specindex].getAttribute("peptide_ref")
@@ -111,9 +137,10 @@ def parse_spectrum_identification_result(mzidentfile):
             if (cv.getAttribute("name") == "xi:score"):
                 xlspecid.Score = cv.getAttribute("value")
                 xlspecid
-                # Not sure if this is needed, because it looks like at least PD exports only the best hit
+                # Not sure if this is needed, because it looks like at least PD 
+                # exports only the best hit
                 if xlspecid.PeptideRef in best_spectra_match:
-                    if xlspecid.Score > best_spectra_match[xlspecid.PeptideRef].Score:
+                    if (xlspecid.Score > best_spectra_match[xlspecid.PeptideRef].Score):
                         xlspecid.SpectraCount = xlspecid.SpectraCount + 1
                         best_spectra_match[xlspecid.PeptideRef] = xlspecid
                 else:
@@ -200,7 +227,8 @@ def parse_xl_peptides(mzidentfile):
 
     xlinks = []
     for key in don_peptides:
-        xlinks.append(XlPeptide.merge_XL_DON_RCV_peptide(don_peptides[key], rcv_peptides[key], key))
-
-    # Check if x-links are intra or inter       
+        xlinks.append(XlPeptide.merge_XL_DON_RCV_peptide(don_peptides[key], 
+                                                         rcv_peptides[key], 
+                                                         key))
+       
     return xlinks

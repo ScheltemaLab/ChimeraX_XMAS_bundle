@@ -1,14 +1,17 @@
-# vim: set expandtab shiftwidth=4 softtabstop=4:
-# === UCSF ChimeraX Copyright ===
-# Copyright 2016 Regents of the University of California.
-# All rights reserved. This software provided pursuant to a license 
-# agreement containing restrictions on its disclosure, duplication and 
-# use. For details see:
-# http://www.rbvi.ucsf.edu/chimerax/docs/licensing.html
-# This notice must be embedded in or attached to all copies, including 
-# partial copies, of the software or any revisions or derivations 
-# thereof.
-# === UCSF ChimeraX Copyright ===
+# Copyright 2022 Scheltema LAB
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 
 from csv import Sniffer
 from operator import attrgetter
@@ -18,13 +21,14 @@ double_attributes = {"Sequences": ["SequenceA", "SequenceB"],
                   "Positions": ["XLinkPositionA", "XLinkPositionB"]}
 
 
+# Enable evidence files from multiple results files and input formats to be
+# read.
 class Evidence:
-    
-    # Enable evidence files from multiple results files and input formats to be
-    # read.
+
     
     def __init__(self, evidence_file):
         
+        # Use a specific class to parse mzIdentML files
         if evidence_file.endswith(".mzid"):
             cls = MzIdentML
         else:
@@ -34,10 +38,10 @@ class Evidence:
         self.peptide_pairs = evidence.peptide_pairs
         self.engine = evidence.engine
         
-            
-class MzIdentML:
-    
-    # Read evidence from mzIdentML files
+        
+# Read evidence from mzIdentML files            
+class MzIdentML:    
+
     
     def __init__(self, evidence_file):
         
@@ -49,40 +53,40 @@ class MzIdentML:
         for peptide_pair in self.peptide_pairs:
             sort_peptides(peptide_pair)
                 
-        
-class Tabular:
     
-    # Read evidence from files with tabular format (*.csv, *.tsv, *.txt, *.xls
-    # *.xlsx)
+# Read evidence from files with tabular format (*.csv, *.tsv, *.txt, *.xls
+# *.xlsx)        
+class Tabular:
+
     
     def __init__(self, evidence_file):
         
         import os
         
-        # Dictionary dictating, for each search engine, which column name 
-        # should be present in the header (index=0), and which function to be
-        # used to obtain the relevant information (index=1)
-        self.engines = {"Proteome Discoverer": ["Sequence A", 
-                                                self.parse_pd_xi_seqs_scores],
-                        "pLink": ["Peptide", self.parse_plink],
-                        "Xi": ["Peptide1", self.parse_pd_xi_seqs_scores],
-                        "Xi_alternative": ["PepSeq1", 
-                                           self.parse_pd_xi_seqs_scores]}
-        self.cols_functions = {"Proteome Discoverer": [["Sequence A", 
-                                                        "Sequence B", 
-                                                        "Max. XlinkX Score", 
-                                                        "Is Decoy"], 
-                                                       self.parse_pd_pos_ids],
-                               "Xi": [["Peptide1", "Peptide2", "Score", 
-                                       "IsDecoy"], 
-                                      self.parse_xi_pos_ids], 
-                               "Xi_alternative": [["PepSeq1", "PepSeq2", 
-                                                   "Score", "IsDecoy"],
-                                                  self.parse_xi_pos_ids]}
+        # Dictionary dictating, for each search engine, which column names to be 
+        # used from the header (index=0), which function to be used to obtain 
+        # the relevant information (index=1), and which function to further 
+        # parse this information (index=2)
+        # Dictionary is slightly different for pLink, because this engine 
+        # requires a different approach for parsing
+        self.engines = {"Proteome Discoverer": [["Sequence A", "Sequence B", 
+                                                 "Max. XlinkX Score", 
+                                                 "Is Decoy"],
+                                                self.parse_pd_xi_seqs_scores, 
+                                                self.parse_pd_pos_ids],
+                        "pLink": [["Peptide"], self.parse_plink],
+                        "Xi": [["Peptide1", "Peptide2", "Score", "IsDecoy"],                                
+                               self.parse_pd_xi_seqs_scores,                               
+                               self.parse_xi_pos_ids],
+                        # Two different layouts are supported for Xi
+                        "Xi_alternative": [["PepSeq1", "PepSeq2", 
+                                            "Score", "IsDecoy"],
+                                           self.parse_pd_xi_seqs_scores, 
+                                           self.parse_xi_pos_ids]}
         
         # Get header and delimiter
         extension = os.path.splitext(evidence_file)[1][1:]
-        self.is_excel = (extension == "xls" or extension == "xlsx")
+        self.is_excel = (extension == "xls" or extension == "xlsx") 
         header, delimiter = self.parse_headers(evidence_file)
         
         # Get engine with header
@@ -102,75 +106,18 @@ class Tabular:
         self.engines[engine][1](df)
         
         
-    def parse_engine(self, header):
-        
-        engine = ""
-        for i, eng in enumerate(self.engines):
-            col_name = self.engines[eng][0]
-            if col_name not in header:
-                continue
-            engine = eng
-            break
-        
-        return engine
-        
-        
-    def parse_headers(self, evidence_file):
-        
-        if self.is_excel:
-            df = pd.read_excel(evidence_file, nrows=0)
-            header = df.columns.values.tolist()
-            return header, None
-        
-        with open(evidence_file) as f:
-            line = f.readline().rstrip()
-        dialect = Sniffer().sniff(line)
-        delimiter = dialect.delimiter
-        header = line.split(delimiter)
-            
-        return header, delimiter
-        
-        
-    def make_df(self, evidence_file, delimiter, header):
-        
-        if self.is_excel:
-            df = pd.read_excel(evidence_file)
-            return df
-        
-        if self.engine != "pLink":        
-            df = pd.read_csv(evidence_file, sep=delimiter, 
-                             decimal=".")
-            score_col = self.cols_functions[self.engine][0][2]
-            if (df[score_col].dtypes != "float64" and delimiter != ","):
-                df = pd.read_csv(evidence_file, sep=delimiter, decimal=",")
-            return df
-        
-        # For non-Excel pLink files, header might need to be adjusted, since  
-        # the first row (the sub-header) can contain more cells than the 
-        # header, which causes problems when converting to dataframe.
-        with open(evidence_file) as f:
-            f.readline()
-            subheader = f.readline().rstrip().split(delimiter)
-        missing_cells = len(subheader) - len(header)
-        if missing_cells > 0:
-            addition = ["Unnamed: %s" % i for i in range(missing_cells)]
-            col_names = header + addition
-        else:
-            col_names = header   
-        df = pd.read_csv(evidence_file, sep=delimiter, header=0, 
-                         names=col_names, decimal=".")
-            
-        return df
-    
-        
     def parse_pd_xi_seqs_scores(self, df):
+        
+        # PD and Xi evidence files have a similar structure. This method parses
+        # the peptide sequences and scores of both of them.
 
         xi_alternative = self.engine == "Xi_alternative" 
-        parameters = self.cols_functions[self.engine]
-        col_names, function = parameters[0], parameters[1]
-            
+        parameters = self.engines[self.engine]
+        col_names, function = parameters[0], parameters[2]
+             
         attributes = (double_attributes["Sequences"] + ["Score", "IsDecoy"])
         range_xlinks = range(len(df.index))
+        # Each peptide pair is stored as an instance of class PeptidePair
         peptide_pairs = [PeptidePair() for i in range_xlinks]
             
         for i in range(len(col_names)):
@@ -186,37 +133,10 @@ class Tabular:
         self.peptide_pairs = peptide_pairs
         
         
-    def parse_xi_pos_ids(self, peptide_pairs, df, alternative):
-        
-        col_names = {False: ["FromSite", "ToSite", "PeptidePairID"],
-                     True: ["LinkPos1", "LinkPos2", "PSMID"]}
-        keys = double_attributes["Positions"] + ["Ref"]
-        params = {}
-        for key in keys:
-            params[key] = None
-            
-        for i, key in enumerate(keys):
-            col_name = col_names[alternative][i]
-            params[key] = df[col_name].tolist()
-            
-        for i, peptide_pair in enumerate(peptide_pairs):
-            peptide_pair.Ref = params["Ref"][i]
-            for j, key in enumerate(keys[:2]):
-                seq_attr = double_attributes["Sequences"][j]
-                pos_attr = double_attributes["Positions"][j]
-                if peptide_pair.invalid(key):
-                    seq = ""
-                    pos = ""
-                else:
-                    seq = getattr(peptide_pair, seq_attr)
-                    residues = [res for res in seq if res.isupper()]
-                    seq = "".join(residues)
-                    pos = params[key][i] - 1
-                setattr(peptide_pair, seq_attr, seq)
-                setattr(peptide_pair, pos_attr, pos)
-        
-    
     def parse_pd_pos_ids(self, peptide_pairs, *args):
+        
+        # Parse the crosslink positions and peptide pair references of PD
+        # evidence files
         
         for i, peptide_pair in enumerate(peptide_pairs):
             peptide_pair.Ref = i + 2
@@ -239,13 +159,20 @@ class Tabular:
             
     def parse_plink(self, df):
         
+        # Parse pLink evidence files
+        
         from numpy import isnan
         import re
         
+        # pLink evidence files have a two-dimensional header. The upper header
+        # corresponds to unique peptide pairs. The lower header corresponds to 
+        # spectra belonging to a peptide pair. The lower (sub-) header is read 
+        # and, subsequently, removed from the dataframe for convenience
         subheader = df.iloc[0,:].values.tolist()
         df.drop(index=df.index[0], axis=0, inplace=True)
         peptide_pairs = []  
         
+        # Helper function to extract sequences and crosslink positions
         def parse_seq_pos(value):
             sequences = re.findall("[A-Z]+", value)
             positions = re.findall("[0-9]+", value)
@@ -253,6 +180,8 @@ class Tabular:
 
         for row in df.itertuples():
             ref = row.Peptide_Order
+            # If the Peptide_Order cell contains a value, the row contains
+            # peptide pair data. If not, it contains spectra data
             if not isnan(ref):
                 peptide_pair = PeptidePair()
                 peptide_pairs.append(peptide_pair)
@@ -271,31 +200,105 @@ class Tabular:
                 peptide_pair.Score = score
                 
             self.peptide_pairs = peptide_pairs
-    
+        
             
-def sort_peptides(peptide_pair):
-    
-    seq_attributes = double_attributes["Sequences"]
-    pos_attributes = double_attributes["Positions"]
-    
-    peptides_unsorted = [None] * 2
-    pos_unsorted = [None] * 2
-    
-    for i, seq_attr in enumerate(seq_attributes):
-        peptides_unsorted[i] = getattr(peptide_pair, seq_attr)
-        pos_unsorted[i] = getattr(peptide_pair, pos_attributes[i])
-    peptides_sorted = sorted(peptides_unsorted)
-    
-    if peptides_sorted == peptides_unsorted:
-        return
-    
-    pos_sorted = pos_unsorted[::-1]
-    
-    for i, seq_attr in enumerate(seq_attributes):
-        setattr(peptide_pair, seq_attr, peptides_sorted[i])
-        setattr(peptide_pair, pos_attributes[i], pos_sorted[i])       
+    def parse_xi_pos_ids(self, peptide_pairs, df, alternative):
         
+        # Parse crosslink positions and peptide references for Xi evidence 
+        # files
         
+        # Dictionary containing the relevant column names for Xi (False) and
+        # Xi_alternative (True)
+        col_names = {False: ["FromSite", "ToSite", "PeptidePairID"],
+                     True: ["LinkPos1", "LinkPos2", "PSMID"]}
+        keys = double_attributes["Positions"] + ["Ref"]
+        
+        params = {}
+        for i, key in enumerate(keys):
+            col_name = col_names[alternative][i]
+            params[key] = df[col_name].tolist()
+            
+        for i, peptide_pair in enumerate(peptide_pairs):
+            peptide_pair.Ref = params["Ref"][i]
+            for j, key in enumerate(keys[:2]):
+                seq_attr = double_attributes["Sequences"][j]
+                pos_attr = double_attributes["Positions"][j]
+                if peptide_pair.invalid(key):
+                    seq = ""
+                    pos = ""
+                else:
+                    seq = getattr(peptide_pair, seq_attr)
+                    residues = [res for res in seq if res.isupper()]
+                    seq = "".join(residues)
+                    pos = params[key][i] - 1
+                setattr(peptide_pair, seq_attr, seq)
+                setattr(peptide_pair, pos_attr, pos)
+                
+        
+    def parse_headers(self, evidence_file):
+        
+        if self.is_excel:
+            df = pd.read_excel(evidence_file, nrows=0)
+            header = df.columns.values.tolist()
+            return header, None
+        
+        with open(evidence_file) as f:
+            line = f.readline().rstrip()
+        dialect = Sniffer().sniff(line)
+        delimiter = dialect.delimiter
+        header = line.split(delimiter)
+            
+        return header, delimiter
+                
+                
+    def parse_engine(self, header):
+        
+        engine = ""
+        for i, eng in enumerate(self.engines):
+            col_name = self.engines[eng][0][0]
+            if col_name not in header:
+                continue
+            engine = eng
+            break
+        
+        return engine
+                
+                
+    def make_df(self, evidence_file, delimiter, header):
+        
+        # Write evidence file to a Pandas dataframe. Approach differs between
+        # Excel (xlsx) files, non-Excel non-pLink files, and non-Excel pLink
+        # files
+        if self.is_excel:
+            df = pd.read_excel(evidence_file)
+            return df
+        
+        if self.engine != "pLink":        
+            df = pd.read_csv(evidence_file, sep=delimiter, 
+                             decimal=".")
+            score_col = self.engines[self.engine][0][2]
+            if (df[score_col].dtypes != "float64" and delimiter != ","):
+                df = pd.read_csv(evidence_file, sep=delimiter, decimal=",")
+            return df
+        
+        # For non-Excel pLink files, header might need to be adjusted, since  
+        # the first row (the sub-header) can contain more cells than the 
+        # header, which causes problems when converting to dataframe.
+        with open(evidence_file) as f:
+            f.readline()
+            subheader = f.readline().rstrip().split(delimiter)
+        missing_cells = len(subheader) - len(header)
+        if missing_cells > 0:
+            addition = ["Unnamed: %s" % i for i in range(missing_cells)]
+            col_names = header + addition
+        else:
+            col_names = header   
+        df = pd.read_csv(evidence_file, sep=delimiter, header=0, 
+                         names=col_names, decimal=".")
+            
+        return df
+    
+    
 class PeptidePair:
     
     
@@ -325,7 +328,8 @@ class PeptidePair:
         
         
     def get_info(self, attr="Sequence"):
-            
+        
+        # Return multiple attributes
         f = attrgetter(attr + "A", attr + "B")
         
         return f(self)  
@@ -333,5 +337,34 @@ class PeptidePair:
     
     def invalid(self, seq_attr):
         
+        # If sequence is from a decoy peptide or is not a string, it cannot be
+        # used for mapping(/alignment)
         seq = getattr(self, seq_attr)
         return (self.IsDecoy or not isinstance(seq, str))
+            
+                    
+def sort_peptides(peptide_pair):
+    
+    # Sort peptides of a peptide pair based on sequence
+    
+    seq_attributes = double_attributes["Sequences"]
+    pos_attributes = double_attributes["Positions"]
+    
+    peptides_unsorted = [None] * 2
+    pos_unsorted = [None] * 2
+    
+    for i, seq_attr in enumerate(seq_attributes):
+        peptides_unsorted[i] = getattr(peptide_pair, seq_attr)
+        pos_unsorted[i] = getattr(peptide_pair, pos_attributes[i])
+    peptides_sorted = sorted(peptides_unsorted)
+    
+    if peptides_sorted == peptides_unsorted:
+        return
+    
+    pos_sorted = pos_unsorted[::-1]
+    
+    for i, seq_attr in enumerate(seq_attributes):
+        setattr(peptide_pair, seq_attr, peptides_sorted[i])
+        setattr(peptide_pair, pos_attributes[i], pos_sorted[i])      
+        
+        

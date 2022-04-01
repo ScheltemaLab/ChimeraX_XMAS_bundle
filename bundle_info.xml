@@ -1,36 +1,36 @@
-<!--
-ChimeraX bundle names must start with "ChimeraX-"
-to avoid clashes with package names in pypi.python.org.
-When uploaded to the ChimeraX toolshed, the bundle
-will be displayed without the ChimeraX- prefix.
--->
-
 <BundleInfo name="ChimeraX-XMAS"
-	    version="1.0.6" package="chimerax.xmas"
+	    version="1.1" package="chimerax.xmas"
   	    minSessionVersion="1" maxSessionVersion="1">
 
-  <!-- Additional information about bundle source -->
-  <Author>I.M. Lagerwaard</Author>
-  <Email>i.m.lagerwaard@students.uu.nl</Email>
-  <URL>https://scheltemalab.wpcomstaging.com/</URL>
+  <Author>Scheltema Lab</Author>
+  <Email>r.a.scheltema@uu.nl</Email>
+  <URL>https://github.com/ScheltemaLab</URL>
 
-  <!-- Synopsis is a one-line description
-       Description is a full multi-line description -->
-  <Synopsis>Tool to map crosslink data on structural models</Synopsis>
-  <Description>A gui in which a Proteome Discoverer output file containing crosslink data
-    can be selected. From this file, peptide pairs are aligned to structural ChimeraX models. Pseudobonds for
-    perfectly aligning peptide pairs are opened.
+  <Synopsis>
+		Analyze and visualize crosslinking mass spectrometry data in a 
+		structural context
+  </Synopsis>
+  <Description>
+		XMAS - or Cross(X)link Mapping and AnalySis - aligns the sequences of 
+		crosslinked peptides from crosslinking mass spectrometry (XL-MS) data 
+		to the sequences of structural models, thereby obtaining crosslinked 
+		positions. These crosslinks are mapped and displayed as pseudobond 
+		models. XMAS features tools for visualization, analysis, and data 
+		handling, providing insight into reproducibility and reliability of 
+		XL-MS data. It also enables XL-MS-based evaluation of theoretical 
+		structural models, as well as integration with DisVis and HADDOCK for 
+		integrative modelling. 
   </Description>
 
-  <!-- Categories is a list where this bundle should appear -->
   <Categories>
-    <Category name="General"/>
+    <Category name="Structure Analysis"/>
+    <Category name="Crosslinking Mass Spectrometry"/>
+    <Category name="Input/Output"/>
   </Categories>
 
-  <!-- Dependencies on other ChimeraX/Python packages -->
   <Dependencies>
-    <Dependency name="ChimeraX-Core" version="~=1.1"/>
-    <Dependency name="ChimeraX-UI" version="~=1.0"/>
+    <Dependency name="ChimeraX-Core" version="~=1.3"/>
+    <Dependency name="ChimeraX-UI" version="~=1.3"/>
     <Dependency name="pandas"/>
     <Dependency name="openpyxl"/>
     <Dependency name="seaborn"/>
@@ -38,13 +38,13 @@ will be displayed without the ChimeraX- prefix.
   </Dependencies>
 
   <Classifiers>
-    <!-- Development Status should be compatible with bundle version number -->
     <PythonClassifier>Development Status :: 3 - Alpha</PythonClassifier>
-    <PythonClassifier>License :: Freeware</PythonClassifier>
-    <!-- ChimeraX classifiers describe supplied functionality -->
-    <!-- Register a graphical interface tool -->
-    <ChimeraXClassifier>ChimeraX :: Tool :: XMAS ::
-      Structure Analysis :: Align crosslinked peptides to structures</ChimeraXClassifier>
+    <PythonClassifier>License :: OSI Approved :: Apache Software License
+    </PythonClassifier>
+    <PythonClassifier>Intended Audience :: Science/Research</PythonClassifier>
+    <ChimeraXClassifier>ChimeraX :: Tool :: XMAS :: Structure Analysis :: 
+      Analyze and visualize crosslinking mass spectrometry data
+      </ChimeraXClassifier>
   </Classifiers>
 
 </BundleInfo>

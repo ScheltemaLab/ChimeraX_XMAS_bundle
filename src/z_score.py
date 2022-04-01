@@ -1,14 +1,17 @@
-# vim: set expandtab shiftwidth=4 softtabstop=4:
-# === UCSF ChimeraX Copyright ===
-# Copyright 2016 Regents of the University of California.
-# All rights reserved. This software provided pursuant to a license 
-# agreement containing restrictions on its disclosure, duplication and 
-# use. For details see:
-# http://www.rbvi.ucsf.edu/chimerax/docs/licensing.html
-# This notice must be embedded in or attached to all copies, including 
-# partial copies, of the software or any revisions or derivations 
-# thereof.
-# === UCSF ChimeraX Copyright ===
+# Copyright 2022 Scheltema LAB
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 
 from chimerax.core.commands import run
 from chimerax.core.models import MODEL_POSITION_CHANGED
@@ -20,15 +23,15 @@ from PyQt5.QtWidgets import (QLabel, QLineEdit, QPushButton, QDialogButtonBox,
                              QSizePolicy)
 import re
 
+
 class ZScoreSelector:
 
     # A window is opened in which the user can select a DisVis output folder.
     # From this folder, the .pdb and .mrc files are opened, and the pseudobonds
     # are drawn on the structures. The user-specified distance restraints are a
-    # cutoff for pseudobond color. Colors are adjusted upon model movement. A
+    # cut-off for pseudobond color. Colors are adjusted upon model movement. A
     # slider allows selection of pseudobonds based on z-score. A .pb file is
     # generated with the selected pseudobonds.
-
 
     def __init__(self, xmas):
         
@@ -124,6 +127,8 @@ class ZScoreSelector:
         # scanning chain from the DisVis log file
         
         log_path = self.folder + "disvis.log"
+        # If the folder does contains a log file, the DisVis job was run on the
+        # grid version
         try:
             log_file = open(log_path, "r")
             self.grid = True
@@ -177,9 +182,11 @@ class ZScoreSelector:
     
     def get_zscores(self):
         
+        # Get the zscores from their file (depends on whether the job was run
+        # on the grid or local DisVis version)
+        
         if self.grid:
             zscore_path = self.folder + "z-score.out"
-            # Doesn't work if you use file instead of open(path, "r)
             zscores = [None] * sum(1 for line in open(zscore_path, "r"))
             file = open(zscore_path, "r")
             for i, line in enumerate(file):
@@ -190,7 +197,9 @@ class ZScoreSelector:
             zscores = []
             file = open(zscore_path, "r")
             for line in file:
-                strings = re.findall("<td>[^<]+</td>\s+<td>[^<]+</td>\s+<td>[^<]+</td>\s+<td>[^<]+</td>\s+<td>[^<]+</td>", line)
+                strings = re.findall("<td>[^<]+</td>\s+<td>[^<]+</td>\s+<td>[^"
+                                     "<]+</td>\s+<td>[^<]+</td>\s+<td>[^<]+</td"
+                                     ">", line)
                 if len(strings) != 1:
                     continue
                 string = strings[0]
@@ -210,7 +219,7 @@ class ZScoreSelector:
         # atoms
         file = open(path, "r") 
         pb_manager = self.session.pb_manager
-        self.name = os.path.basename(path).replace(".txt", "")
+        self.name = os.path.basename(path).replace(".txt", ".pb")
         group = pb_manager.get_group(self.name)
         group.radius = 0.5
         group.color = [255, 255, 0, 255]
@@ -332,7 +341,7 @@ class ZScoreSelector:
         if not os.path.exists(path):
             os.makedirs(path)
             
-        file_path = path + self.name + "_disvis_selected.pb"
+        file_path = path + self.name.replace(".pb", "_selected.pb")
         
         self.xmas.write_file(file_path, chosen_restraints, "export")
         print("Selected restraints saved in %s" % file_path)
@@ -354,8 +363,8 @@ from .tool import Slider, ExportSlider
    
 class ZScoreSlider(Slider):
     
-    # Interactive slider to specify a range in z-scores. If a pseudobond's z-score is
-    # outside the specified range, it is not displayed.    
+    # Interactive slider to specify a range in z-scores. If a pseudobond's 
+    # z-score is outside the specified range, it is not displayed.    
     
     def __init__(self, value_type="zscore", enabled=True, minimum=None,
                  maximum=None, pbs=None):
@@ -396,13 +405,13 @@ class ZScoreSlider(Slider):
         # Determine whether the pseudobonds' z-scores are within the specified
         # range
         
-        op = self.get_operators(self)
+        invert = self.invert.isChecked()
         score_range = self.slider.value()
         real_range = self.get_real_values(score_range)
         
         for pb in pbs:
             zscore = pb.zscore
-            is_outside_range = self.check_value(op, zscore, real_range)
+            is_outside_range = self.check_value(invert, zscore, real_range)
             pb.outside_range = is_outside_range
             
         self.function(self, pbs)
