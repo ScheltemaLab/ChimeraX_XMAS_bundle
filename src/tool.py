@@ -56,7 +56,8 @@ class XMAS(ToolInstance):
     # Does this instance persist when session closes
     SESSION_ENDURING = True  
     # We do save/restore in sessions  
-    SESSION_SAVE = True         
+    SESSION_SAVE = True     
+    help = "help:user/tools/manual.html"    
                                 
 
     def __init__(self, session, tool_name):

@@ -2,7 +2,7 @@
 	    version="1.1" package="chimerax.xmas"
   	    minSessionVersion="1" maxSessionVersion="1">
 
-  <Author>Scheltema Lab</Author>
+  <Author>I.M. Lagerwaard</Author>
   <Email>r.a.scheltema@uu.nl</Email>
   <URL>https://github.com/ScheltemaLab</URL>
 
@@ -36,6 +36,37 @@
     <Dependency name="seaborn"/>
     <Dependency name="qtrangeslider"/>
   </Dependencies>
+
+  <DataFiles>
+    <DataFile>docs/user/tools/manual.html</DataFile>
+    <DataFile>docs/user/tools/manual_bestanden/colorschememapping.xml</DataFile>
+    <DataFile>docs/user/tools/manual_bestanden/filelist.xml</DataFile>
+    <DataFile>docs/user/tools/manual_bestanden/header.html</DataFile>
+    <DataFile>docs/user/tools/manual_bestanden/image001.png</DataFile>
+    <DataFile>docs/user/tools/manual_bestanden/image002.png</DataFile>
+    <DataFile>docs/user/tools/manual_bestanden/image003.png</DataFile>
+    <DataFile>docs/user/tools/manual_bestanden/image004.png</DataFile>
+    <DataFile>docs/user/tools/manual_bestanden/image005.png</DataFile>
+    <DataFile>docs/user/tools/manual_bestanden/image006.png</DataFile>
+    <DataFile>docs/user/tools/manual_bestanden/image007.png</DataFile>
+    <DataFile>docs/user/tools/manual_bestanden/image008.png</DataFile>
+    <DataFile>docs/user/tools/manual_bestanden/image009.png</DataFile>
+    <DataFile>docs/user/tools/manual_bestanden/image010.png</DataFile>
+    <DataFile>docs/user/tools/manual_bestanden/image011.png</DataFile>
+    <DataFile>docs/user/tools/manual_bestanden/image012.png</DataFile>
+    <DataFile>docs/user/tools/manual_bestanden/image013.png</DataFile>
+    <DataFile>docs/user/tools/manual_bestanden/image014.png</DataFile>
+    <DataFile>docs/user/tools/manual_bestanden/image015.png</DataFile>
+    <DataFile>docs/user/tools/manual_bestanden/image016.png</DataFile>
+    <DataFile>docs/user/tools/manual_bestanden/image017.png</DataFile>
+    <DataFile>docs/user/tools/manual_bestanden/image018.png</DataFile>
+    <DataFile>docs/user/tools/manual_bestanden/image019.png</DataFile>
+    <DataFile>docs/user/tools/manual_bestanden/image020.png</DataFile>
+    <DataFile>docs/user/tools/manual_bestanden/image021.png</DataFile>
+    <DataFile>docs/user/tools/manual_bestanden/item0028.xml</DataFile>
+    <DataFile>docs/user/tools/manual_bestanden/props029.xml</DataFile>
+    <DataFile>docs/user/tools/manual_bestanden/themedata.thmx</DataFile>
+  </DataFiles>
 
   <Classifiers>
     <PythonClassifier>Development Status :: 3 - Alpha</PythonClassifier>
