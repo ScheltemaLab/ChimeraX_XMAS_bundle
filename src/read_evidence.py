@@ -256,8 +256,10 @@ class Tabular:
         engine = ""
         for i, eng in enumerate(self.engines):
             col_name = self.engines[eng][0][0]
-            if col_name not in header:
+            col_name_quote = "\"" + col_name + "\""
+            if (col_name not in header and col_name_quote not in header):
                 continue
+            
             engine = eng
             break
         
