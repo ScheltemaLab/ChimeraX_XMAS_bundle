@@ -32,9 +32,9 @@ import matplotlib.pyplot as plt
 import numpy as np 
 import operator
 import os
-from PyQt5.QtCore import Qt
-from PyQt5.QtGui import QDoubleValidator, QIntValidator
-from PyQt5.QtWidgets import (QVBoxLayout, QGridLayout, QHBoxLayout,
+from Qt.QtCore import Qt
+from Qt.QtGui import QDoubleValidator, QIntValidator
+from Qt.QtWidgets import (QVBoxLayout, QGridLayout, QHBoxLayout,
                              QTreeWidget, QAbstractItemView, QPushButton,
                              QLabel, QCheckBox, QDialogButtonBox,
                              QLineEdit, QSpacerItem, QSizePolicy, 

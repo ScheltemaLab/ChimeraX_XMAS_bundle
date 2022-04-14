@@ -17,8 +17,8 @@ from chimerax.core.commands import run
 from chimerax.core.models import MODEL_POSITION_CHANGED
 import os
 from pathlib import Path
-from PyQt5.QtCore import Qt
-from PyQt5.QtWidgets import (QLabel, QLineEdit, QPushButton, QDialogButtonBox,
+from Qt.QtCore import Qt
+from Qt.QtWidgets import (QLabel, QLineEdit, QPushButton, QDialogButtonBox,
                              QHBoxLayout, QVBoxLayout, QFileDialog,
                              QSizePolicy)
 import re
