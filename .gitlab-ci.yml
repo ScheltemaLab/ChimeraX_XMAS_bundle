@@ -1,0 +1,12 @@
+stages:
+  - mirror
+
+
+mirror_github_job:      # This job runs in the deploy stage.
+  stage: mirror  # It only runs when *both* jobs in the test stage complete successfully.
+  tags: [xmas]
+  script:
+    - git remote set-url github_mirror "https://$BASTIAAN_ACCESS@github.com/ScheltemaLab/ChimeraX_bundle"
+    - git push github_mirror HEAD:main
+  only:
+    - web
