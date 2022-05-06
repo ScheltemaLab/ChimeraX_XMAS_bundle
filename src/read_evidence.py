@@ -18,7 +18,7 @@ from operator import attrgetter
 import pandas as pd
 
 double_attributes = {"Sequences": ["SequenceA", "SequenceB"],
-                  "Positions": ["XLinkPositionA", "XLinkPositionB"]}
+                     "Positions": ["XLinkPositionA", "XLinkPositionB"]}
 
 
 # Enable evidence files from multiple results files and input formats to be
@@ -63,25 +63,24 @@ class Tabular:
         
         import os
         
-        # Dictionary dictating, for each search engine, which column names to be 
-        # used from the header (index=0), which function to be used to obtain 
-        # the relevant information (index=1), and which function to further 
-        # parse this information (index=2)
+        # Dictionary dictating, for each search engine, which column names to  
+        # be used from the header (index=0), which function to be used to  
+        # obtain the relevant information (index=1), and which function to 
+        # further parse this information (index=2)
         # Dictionary is slightly different for pLink, because this engine 
         # requires a different approach for parsing
-        self.engines = {"Proteome Discoverer": [["Sequence A", "Sequence B", 
-                                                 "Max. XlinkX Score", 
-                                                 "Is Decoy"],
-                                                self.parse_pd_xi_seqs_scores, 
-                                                self.parse_pd_pos_ids],
+        self.engines = {"XlinkX": [["Sequence A", "Sequence B", 
+                                    "Max. XlinkX Score", "Is Decoy"], 
+                                   self.parse_xlinkx_xi_seqs_scores, 
+                                   self.parse_xlinkx_pos_ids],
                         "pLink": [["Peptide"], self.parse_plink],
                         "Xi": [["Peptide1", "Peptide2", "Score", "IsDecoy"],                                
-                               self.parse_pd_xi_seqs_scores,                               
+                               self.parse_xlinkx_xi_seqs_scores,                               
                                self.parse_xi_pos_ids],
                         # Two different layouts are supported for Xi
                         "Xi_alternative": [["PepSeq1", "PepSeq2", 
                                             "Score", "IsDecoy"],
-                                           self.parse_pd_xi_seqs_scores, 
+                                           self.parse_xlinkx_xi_seqs_scores, 
                                            self.parse_xi_pos_ids]}
         
         # Get header and delimiter
@@ -106,10 +105,10 @@ class Tabular:
         self.engines[engine][1](df)
         
         
-    def parse_pd_xi_seqs_scores(self, df):
+    def parse_xlinkx_xi_seqs_scores(self, df):
         
-        # PD and Xi evidence files have a similar structure. This method parses
-        # the peptide sequences and scores of both of them.
+        # XlinkX and Xi evidence files have a similar structure. This method 
+        # parses the peptide sequences and scores of both of them.
 
         xi_alternative = self.engine == "Xi_alternative" 
         parameters = self.engines[self.engine]
@@ -133,9 +132,9 @@ class Tabular:
         self.peptide_pairs = peptide_pairs
         
         
-    def parse_pd_pos_ids(self, peptide_pairs, *args):
+    def parse_xlinkx_pos_ids(self, peptide_pairs, *args):
         
-        # Parse the crosslink positions and peptide pair references of PD
+        # Parse the crosslink positions and peptide pair references of XlinkX
         # evidence files
         
         for i, peptide_pair in enumerate(peptide_pairs):
@@ -222,8 +221,8 @@ class Tabular:
             peptide_pair.Ref = params["Ref"][i]
             for j, key in enumerate(keys[:2]):
                 seq_attr = double_attributes["Sequences"][j]
-                pos_attr = double_attributes["Positions"][j]
-                if peptide_pair.invalid(key):
+                pos_attr = key
+                if peptide_pair.invalid(seq_attr):
                     seq = ""
                     pos = ""
                 else:
@@ -342,7 +341,17 @@ class PeptidePair:
         # If sequence is from a decoy peptide or is not a string, it cannot be
         # used for mapping(/alignment)
         seq = getattr(self, seq_attr)
-        return (self.IsDecoy or not isinstance(seq, str))
+        
+        if self.IsDecoy:
+            return True
+        
+        try:
+            float(seq)
+            invalid = True
+        except:
+            invalid = False
+            
+        return invalid
             
                     
 def sort_peptides(peptide_pair):

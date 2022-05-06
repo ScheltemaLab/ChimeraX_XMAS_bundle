@@ -456,12 +456,16 @@ class XMAS(ToolInstance):
             evidence = Evidence(evidence_file)
             input_pairs = evidence.peptide_pairs
             engine = evidence.engine
+            if engine == "Xi_alternative":
+                log_engine = "Xi"
+            else:
+                log_engine = engine
 
             # Display bold log message to signify which file is being
             # mapped
             self.session.logger.info(
                 "<br><b>Peptide pair mapping of %s evidence file: %s</b>" 
-                % (engine, evidence_file), is_html=True)
+                % (log_engine, evidence_file), is_html=True)
                     
             # Create a file for reference of the mapping results to the 
             # evidence file

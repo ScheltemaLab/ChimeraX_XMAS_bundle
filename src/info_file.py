@@ -14,10 +14,11 @@
 
 
 import pandas as pd
+from Qt.QtWidgets import QMessageBox
 
 # The name and content of the first (reference) column depends on the search
 # engine used. This dictionary contains the reference column names.
-ref_columns = {"Proteome Discoverer": "Row in evidence file",
+ref_columns = {"XlinkX": "Row in evidence file",
                "pLink": "Peptide_Order",
               "Xi": "PeptidePairID",
               "Xi_alternative": "PSMID",
@@ -48,6 +49,25 @@ class InfoFile:
         
     
     def create_file(self):
-        # Create the tsv file from the dataframe
+        # Create the tsv file from the dataframe. First sort the dataframe on
+        # the reference column
         self.df.sort_values([self.ref_column, "Pseudobond"], inplace=True)
+        
+        # Before creating the file, check whether it is not open already, to
+        # prevent permission error
+        while True:
+            try:
+                file = open(self.path, "w")
+                file.close()
+                break
+            except:
+                msg = QMessageBox()
+                msg.setIcon(QMessageBox.Critical)
+                msg.setText("Error: it looks like a file with name \'%s\' is "
+                            "already open" % self.path)
+                msg.setInformativeText("Please close the file and click \'OK\'"
+                                       "\nNB file will be overwritten!")
+                msg.setWindowTitle("Error")
+                msg.exec_()
+                
         self.df.to_csv(self.path, sep="\t", index=False)

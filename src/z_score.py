@@ -198,8 +198,8 @@ class ZScoreSelector:
             file = open(zscore_path, "r")
             for line in file:
                 strings = re.findall("<td>[^<]+</td>\s+<td>[^<]+</td>\s+<td>[^"
-                                     "<]+</td>\s+<td>[^<]+</td>\s+<td>[^<]+</td"
-                                     ">", line)
+                                     "<]+</td>\s+<td>[^<]+</td>\s+<td>[^<]+</t"
+                                     "d>", line)
                 if len(strings) != 1:
                     continue
                 string = strings[0]
