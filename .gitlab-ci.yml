@@ -2,10 +2,11 @@ stages:
   - mirror
 
 
-mirror_github_job:      # This job runs in the deploy stage.
-  stage: mirror  # It only runs when *both* jobs in the test stage complete successfully.
+mirror_github_job:     
+  stage: mirror  
   tags: [xmas]
   script:
+    - git pull github_mirror HEAD:main
     - git push github_mirror HEAD:main
   only:
     - web
