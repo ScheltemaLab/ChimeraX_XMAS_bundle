@@ -588,7 +588,9 @@ class XMAS(ToolInstance):
         max_score = 0
         
         for score in scores:
-            if float(score) <= max_score:
+            if score == "":
+                return ""
+            elif float(score) <= max_score:
                 continue
             max_score = score
             
@@ -805,6 +807,7 @@ class XMAS(ToolInstance):
                 distance = new_pb.length
             max_score = 0
             has_peptide_pairs = False
+            has_score = True
             for i, peptide_pair in enumerate(peptide_pairs):
                 if peptide_pair is None:
                     continue
@@ -820,11 +823,16 @@ class XMAS(ToolInstance):
                     new_pb.indices[i] = index
                 # Attach a score to the new pb if applicable
                 score = peptide_pair.Score
-                if score <= max_score:
+                if score == "":
+                    has_score = False
+                    break
+                elif score <= max_score:
                     continue
                 max_score = score
-            if has_peptide_pairs:
+            if (has_score and has_peptide_pairs):
                 new_pb.score = max_score
+            elif (not has_score and has_peptide_pairs):
+                new_pb.score = ""
   
         self.write_file(file_path, group, file_type=".pb")
         print("Pseudobonds are stored in %s" % file_path)
@@ -1351,7 +1359,7 @@ class XMAS(ToolInstance):
         make_score_slider = True
         for group in pbs.by_group:
             pb = group[1][0]
-            if not hasattr(pb, "score"):
+            if (not hasattr(pb, "score") or pb.score == ""):
                 make_score_slider = False
                 break
         if make_score_slider:
@@ -1392,7 +1400,7 @@ class XMAS(ToolInstance):
             if pb.score <= maximum:
                 continue
             maximum = pb.score
-
+            
         return int(maximum) + 1
 
 
