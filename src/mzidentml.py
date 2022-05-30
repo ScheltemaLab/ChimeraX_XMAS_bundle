@@ -135,7 +135,7 @@ def parse_spectrum_identification_result(mzidentfile):
         xlspecid.PeptideRef = spec_id[specindex].getAttribute("peptide_ref")
         cvparam = spec_id[specindex].getElementsByTagName("cvParam")
         for cv in cvparam:
-            if (cv.getAttribute("name") == "xi:score"):
+            if ("score" in cv.getAttribute("name").lower()):
                 xlspecid.Score = cv.getAttribute("value")
                 xlspecid
                 # Not sure if this is needed, because it looks like at least PD 
@@ -252,8 +252,3 @@ def parse_xl_peptides(mzidentfile):
        
     return xlinks
 
-def main():
-    #xlink_info = parse_xl_peptides('D:/xlinks_for_Ilse/SIM-XL_example.mzid')
-    xlink_info = parse_xl_peptides('D:/xlinks_for_Ilse/20211105_TIMSTOF1_Ultimate6_Janke002_SA_EXT02_VA-B_stepped_BF5_1_1486_rtwin_60_mzwin_20 PPM_1overK0_5-(11).mzid')
-if __name__ == "__main__":
-    main()
