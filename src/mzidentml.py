@@ -13,7 +13,7 @@
 # limitations under the License.
 
 
-from .read_evidence import PeptidePair
+from read_evidence import PeptidePair
 import re
 import xml.dom.minidom as minidom
 
@@ -84,7 +84,7 @@ class XlPeptideEvidence:
 class XlSpectrumIdentification:
     def __init__(self):
         self.PeptideRef = ""
-        self.Score = ""
+        self.Score = 0
         self.SpectraCount = 1
         
 
@@ -101,7 +101,9 @@ def parse_sequence_dbs(mzidentfile):
         sq.Accession = sequence.getAttribute("accession")
         sq.Id = sequence.getAttribute("id")
         cv_param = sequence.getElementsByTagName("cvParam")
-        sq.ProteinDescription = cv_param[0].getAttribute("value")
+        try:
+            sq.ProteinDescription = cv_param[0].getAttribute("value")
+        except: pass
         db_sequences[sq.Id] = sq
     return db_sequences
 
@@ -113,14 +115,13 @@ def parse_xl_peptides_evidence(mzidentfile):
     evidences = {}
     peptide_evidence = doc.getElementsByTagName("PeptideEvidence")
     for evidence in peptide_evidence:
-        if ("XL" in evidence.getAttribute("peptide_ref")):
-            ev = XlPeptideEvidence()
-            ev.DBSequenceRef  = evidence.getAttribute("dBSequence_ref")
-            ev.Id = evidence.getAttribute("id")
-            ev.PeptideRef= evidence.getAttribute("peptide_ref")
-            ev.Start = evidence.getAttribute("start")
-            ev.End = evidence.getAttribute("end")
-            evidences[ev.PeptideRef] = ev
+        ev = XlPeptideEvidence()
+        ev.DBSequenceRef  = evidence.getAttribute("dBSequence_ref")
+        ev.Id = evidence.getAttribute("id")
+        ev.PeptideRef= evidence.getAttribute("peptide_ref")
+        ev.Start = evidence.getAttribute("start")
+        ev.End = evidence.getAttribute("end")
+        evidences[ev.PeptideRef] = ev
     return evidences
 
 
@@ -149,46 +150,63 @@ def parse_spectrum_identification_result(mzidentfile):
 
     doc = minidom.parse(mzidentfile)
     best_spectra_match = {}
+    don_rcv_peptide_refs = {}
     spectra_matched = doc.getElementsByTagName("SpectrumIdentificationResult")
     for spectramatch in spectra_matched:
         spec_id = spectramatch.getElementsByTagName("SpectrumIdentificationItem")
         
         pep_ref = spec_id[0].getAttribute("peptide_ref")
-        if ("XL_" in pep_ref):
-            extract_info (0, best_spectra_match)
+        extract_info (0, best_spectra_match)
+        if (len(spec_id) > 1):
             extract_info (1, best_spectra_match)
+            don_rcv_peptide_refs[pep_ref] = spec_id[1].getAttribute("peptide_ref")
 
-    return best_spectra_match
+    return best_spectra_match, don_rcv_peptide_refs
 
 
 def parse_xl_peptides(mzidentfile):
     doc = minidom.parse(mzidentfile)
+
     dbs = parse_sequence_dbs(mzidentfile)
     evidences = parse_xl_peptides_evidence(mzidentfile)
-    spectra_scores = parse_spectrum_identification_result(mzidentfile)
 
     peptides = doc.getElementsByTagName("Peptide")
+
+    spectra_scores, don_rcv_peptide_refs = parse_spectrum_identification_result(mzidentfile)
 
     don_peptides = {}
     rcv_peptides = {}
 
     for peptide in peptides:
-        if ("XL_" in peptide.getAttribute("id")):
+
+        pep_id = peptide.getAttribute("id")
+        #Check peptide modifications, check if x-link MOD is present, and if peptide is RCV or DON
+        #Format: Mod name [location]
+        modifications = []
+        xlinkposition = int()
+        rcv_peptide = False
+        don_peptide = False
+
+        pepmods = peptide.getElementsByTagName("Modification")
+        for mod in pepmods:
+            loc = mod.getAttribute("location")
+            cvparams = mod.getElementsByTagName("cvParam")
+            name = cvparams[0].getAttribute("name")
+            modifications.append("".join((name," [", loc, "]")))
+            for cvind in  range(0, len(cvparams), 1):
+                value = cvparams[cvind].getAttribute("accession")
+                if (cvparams[cvind].getAttribute("cvRef") == "XLMOD"):
+                    xlinkposition = int(loc)
+                elif (value == "MS:1002510"):
+                    rcv_peptide = True
+                elif (value == "MS:1002509"):
+                    don_peptide = True
+ 
+        if (rcv_peptide or don_peptide):
             pep = XlPeptide()
             
             key = peptide.getAttribute("id")
             peptidesequence = peptide.getElementsByTagName("PeptideSequence")[0].firstChild.nodeValue
-            
-            #Mod name [location]
-            modifications = []
-            pepmods = peptide.getElementsByTagName("Modification")
-            for mod in pepmods:
-                loc = mod.getAttribute("location")
-                cvparams = mod.getElementsByTagName("cvParam")
-                name = cvparams[0].getAttribute("name")
-                modifications.append("".join((name," [", loc, "]")))
-                if (cvparams[0].getAttribute("cvRef") == "XLMOD"):
-                    xlinkposition = int(loc)
             
             if (key in evidences):
                 evidence = evidences[key]
@@ -204,8 +222,8 @@ def parse_xl_peptides(mzidentfile):
                 pep.Score = float(spectra_scores[key].Score)
                 pep.NumCSMs = int(spectra_scores[key].SpectraCount)
 
-            if ("_DON" in key):
-                key = re.sub("_DON", "", key)
+            if (don_peptide):
+                #key = re.sub("_DON", "", key)
                 pep.Ref = key
                 pep.AccessionA = accessions
                 pep.ModificationsA = ";".join(modifications)
@@ -214,8 +232,8 @@ def parse_xl_peptides(mzidentfile):
                 pep.SequenceA = peptidesequence
                 pep.XLinkPositionA = xlinkposition - 1
                 don_peptides[key] = pep
-            else:
-                key = re.sub("_RCV", "", key)
+            elif (rcv_peptide):
+                #key = re.sub("_RCV", "", key)
                 pep.Ref = key
                 pep.AccessionB = accessions
                 pep.ModificationsB = ";".join(modifications)
@@ -226,9 +244,16 @@ def parse_xl_peptides(mzidentfile):
                 rcv_peptides[key] = pep
 
     xlinks = []
+
     for key in don_peptides:
         xlinks.append(XlPeptide.merge_XL_DON_RCV_peptide(don_peptides[key], 
-                                                         rcv_peptides[key], 
+                                                         rcv_peptides[don_rcv_peptide_refs[key]], 
                                                          key))
        
     return xlinks
+
+def main():
+    #xlink_info = parse_xl_peptides('D:/xlinks_for_Ilse/SIM-XL_example.mzid')
+    xlink_info = parse_xl_peptides('D:/xlinks_for_Ilse/20211105_TIMSTOF1_Ultimate6_Janke002_SA_EXT02_VA-B_stepped_BF5_1_1486_rtwin_60_mzwin_20 PPM_1overK0_5-(11).mzid')
+if __name__ == "__main__":
+    main()
