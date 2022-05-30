@@ -251,4 +251,3 @@ def parse_xl_peptides(mzidentfile):
                                                          key))
        
     return xlinks
-
