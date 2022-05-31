@@ -13,7 +13,7 @@
 # limitations under the License.
 
 
-from read_evidence import PeptidePair
+from .read_evidence import PeptidePair
 import re
 import xml.dom.minidom as minidom
 
@@ -126,6 +126,7 @@ def parse_xl_peptides_evidence(mzidentfile):
 
 
 # Store the best crosslink score and CSM count from spectra hits
+# Track DON and RCV peptide information
 def parse_spectrum_identification_result(mzidentfile):
 
     # Helper function to extract info for both x-link peptides. DON has index 0 
@@ -137,9 +138,7 @@ def parse_spectrum_identification_result(mzidentfile):
         for cv in cvparam:
             if ("score" in cv.getAttribute("name").lower()):
                 xlspecid.Score = cv.getAttribute("value")
-                xlspecid
-                # Not sure if this is needed, because it looks like at least PD 
-                # exports only the best hit
+                
                 if xlspecid.PeptideRef in best_spectra_match:
                     if (xlspecid.Score > best_spectra_match[xlspecid.PeptideRef].Score):
                         xlspecid.SpectraCount = xlspecid.SpectraCount + 1
@@ -197,9 +196,12 @@ def parse_xl_peptides(mzidentfile):
                 value = cvparams[cvind].getAttribute("accession")
                 if (cvparams[cvind].getAttribute("cvRef") == "XLMOD"):
                     xlinkposition = int(loc)
-                elif (value == "MS:1002510"):
+                # X-link receiver in SIM-XL mzid
+                if (cvparams[cvind].getAttribute("name") == "cross-link receiver"):
+                    xlinkposition = int(loc)
+                if (value == "MS:1002510"):
                     rcv_peptide = True
-                elif (value == "MS:1002509"):
+                if (value == "MS:1002509"):
                     don_peptide = True
  
         if (rcv_peptide or don_peptide):
@@ -223,7 +225,6 @@ def parse_xl_peptides(mzidentfile):
                 pep.NumCSMs = int(spectra_scores[key].SpectraCount)
 
             if (don_peptide):
-                #key = re.sub("_DON", "", key)
                 pep.Ref = key
                 pep.AccessionA = accessions
                 pep.ModificationsA = ";".join(modifications)
@@ -233,7 +234,6 @@ def parse_xl_peptides(mzidentfile):
                 pep.XLinkPositionA = xlinkposition - 1
                 don_peptides[key] = pep
             elif (rcv_peptide):
-                #key = re.sub("_RCV", "", key)
                 pep.Ref = key
                 pep.AccessionB = accessions
                 pep.ModificationsB = ";".join(modifications)
