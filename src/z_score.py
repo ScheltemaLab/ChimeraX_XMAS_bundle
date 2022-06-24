@@ -39,8 +39,7 @@ class ZScoreSelector:
         self.xmas = xmas
         self.session = xmas.session
         tool_window = xmas.tool_window        
-        self.main_dialog = tool_window.create_child_window("Create HADDOCK "
-                                                           "input from DisVis "
+        self.main_dialog = tool_window.create_child_window("Analyze DisVis "
                                                            "output")
 
         label = QLabel("Select a DisVis output folder:")
