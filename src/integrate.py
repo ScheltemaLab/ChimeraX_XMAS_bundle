@@ -107,7 +107,7 @@ class Integrate:
         self.ok_cancel = QDialogButtonBox(QDialogButtonBox.Ok
                                           | QDialogButtonBox.Cancel)
         # When the user has selected a pseudobonds model, chain A, and the  
-        # output type(s), and has clicked "OK", the output is created
+        # input type(s), and has clicked "OK", the output is created
         self.ok_cancel.accepted.connect(self.create_output)
         self.ok_cancel.rejected.connect(self.haddock_window.destroy)
         # "OK" button is only be enabled if a pseudobonds model has been
@@ -155,8 +155,8 @@ class Integrate:
             return
         
         # When a model is selected, options to select chain A, the output 
-        # type(s), and the distances for in the TBL file become available for 
-        # the selected model
+        # type(s), and the distances for in the Restraints file become 
+        # available for the selected model
         self.pb_group.buttonClicked.connect(self.select_chain_a)      
     
         
@@ -167,8 +167,8 @@ class Integrate:
         # molecular model will be chain A. The other model will be chain B
         
         # Before any pseudobonds model has been selected, the options to select 
-        # chain A, the output type(s), and the distances for in the TBL file
-        # are not inserted in the layout yet ("expanded" attribute set to 
+        # chain A, the input type(s), and the distances for in the Restraints 
+        # file are not inserted in the layout yet ("expanded" attribute set to 
         # False). They are inserted when a model's QRadioButton is clicked.
         # However, when the layout is already expanded, and a different model
         # is selected, different chains for selecting chain A is displayed. 
@@ -212,8 +212,8 @@ class Integrate:
             button.chain = structure
         
         # The first time that the user has selected a pseudobonds model, the
-        # options to select the output type(s) and the distances for in the TBL 
-        # file appear
+        # options to select the input type(s) and the distances for in the 
+        # restraints file appear
         if add_boxes:
             self.select_output()
         
@@ -227,14 +227,14 @@ class Integrate:
     
     def select_output(self):
         
-        # Widgets to select the output type(s) and the distances for in the TBL 
-        # file are inserted in the layout
+        # Widgets to select the input type(s) and the distances for in the 
+        # restraints file are inserted in the layout
         
         # The user can choose to print interface residue numbers to the 
-        # ChimeraX log, create a TBL file, or create PDB files for the 
+        # ChimeraX log, create a Restraints file, or create PDB files for the 
         # molecular models, or any combination thereof
         self.output_layout = QHBoxLayout()
-        outputs = ("Residue numbers", "TBL file", "PDB files")
+        outputs = ("Residue numbers", "Restraints file", "PDB files")
         self.checkboxes = [None] * len(outputs)
         for i, output in enumerate(outputs):
             box = QCheckBox(output)
@@ -243,9 +243,10 @@ class Integrate:
             box.setChecked(True)
         
         # Insert QLineEdits to specify the lower, median, and upper distance
-        # to be used in the TBL file
+        # to be used in the Restraints file
         distance_layout = QGridLayout()
-        distance_layout.addWidget(QLabel("Define TBL distances:"), 0, 0, 1, 2)
+        distance_layout.addWidget(QLabel("Define restraint distances:"), 0, 0, 
+                                  1, 2)
         distances = ("Lower:", "Median:", "Upper:")
         presets = ("5.0", "10.0", "25.0")
         self.line_edits = [None] * len(distances)
@@ -262,7 +263,7 @@ class Integrate:
         index = self.haddock_layout.count() - 1
         self.haddock_layout.insertWidget(index, QLabel(""))
         self.haddock_layout.insertWidget(index + 1, 
-                                         QLabel("Select output type(s):"))
+                                         QLabel("Select input type(s):"))
         self.haddock_layout.insertLayout(index + 2, self.output_layout)
         self.haddock_layout.insertWidget(index + 3, QLabel("")) 
         self.haddock_layout.insertLayout(index + 4, distance_layout)
@@ -272,10 +273,10 @@ class Integrate:
         
         # The user has selected all parameters and clicked "OK"
         
-        # The output type(s) are extracted
-        types = (numbers, tbl, pdbs) = self.output_types()
+        # The input type(s) are extracted
+        types = (numbers, restraints_file, pdbs) = self.output_types()
         if not True in types:
-            print("Please select output type(s)")
+            print("Please select input type(s)")
             return
         
         # The pseudobonds model, the molecular model that will be chain A, and 
@@ -295,9 +296,9 @@ class Integrate:
         # the molecular models, is created
         group = self.create_group(session, pb_model, copied_models)
         
-        # The user should select a folder in which to save the TBL and PDB 
-        # files
-        if tbl or pdbs:
+        # The user should select a folder in which to save the restraints and 
+        # PDB files
+        if restraints_file or pdbs:
             get_folder = QFileDialog.getExistingDirectory
             folder = get_folder(None, "Select a folder for HADDOCK input", "",
                                 QFileDialog.ShowDirsOnly 
@@ -312,14 +313,14 @@ class Integrate:
         self.renumber_and_create_pdbs(session, copied_models.values(), pdbs)
         
         # Create a dictionary from the pseudobonds model copy, to extract the
-        # information for the interface residues and TBL file
-        if numbers or tbl:
+        # information for the interface residues and Restraints file
+        if numbers or restraints_file:
             atoms_dict = self.create_atoms_dict(group, copy_a)
             if numbers:
                 self.print_residue_numbers(atoms_dict, session)
-            if tbl:
+            if restraints_file:
                 pb_model_name = os.path.splitext(pb_model.name)[0]
-                self.create_tbl_file(atoms_dict, pb_model_name)
+                self.create_restraints_file(atoms_dict, pb_model_name)
         
         for model in [group] + list(copied_models.values()):
             model.delete()
@@ -492,9 +493,9 @@ class Integrate:
         return ", ".join(numbers_list)
         
         
-    def create_tbl_file(self, atoms_dict, pb_model_name):
+    def create_restraints_file(self, atoms_dict, pb_model_name):
         
-        # Create the TBL file
+        # Create the Restraints file
         
         distances = self.get_distances()
         
@@ -522,7 +523,7 @@ class Integrate:
     def get_distances(self):
         
         # Get the distances that the user has specified in the dedicated 
-        # QLineEdits for the TBL file
+        # QLineEdits for the Restraints file
         
         distances = [None] * len(self.line_edits)
         
