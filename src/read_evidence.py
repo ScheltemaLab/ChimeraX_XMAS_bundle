@@ -278,8 +278,11 @@ class Tabular:
             df = pd.read_csv(evidence_file, sep=delimiter, 
                              decimal=".")
             score_col = self.engines[self.engine][0][2]
-            if (df[score_col].dtypes != "float64" and delimiter != ","):
-                df = pd.read_csv(evidence_file, sep=delimiter, decimal=",")
+            try:
+                if (df[score_col].dtypes != "float64" and delimiter != ","):
+                    df = pd.read_csv(evidence_file, sep=delimiter, decimal=",")
+            except:
+                pass
             return df
         
         # For non-Excel pLink files, header might need to be adjusted, since  
@@ -377,5 +380,3 @@ def sort_peptides(peptide_pair):
     for i, seq_attr in enumerate(seq_attributes):
         setattr(peptide_pair, seq_attr, peptides_sorted[i])
         setattr(peptide_pair, pos_attributes[i], pos_sorted[i])      
-        
-        

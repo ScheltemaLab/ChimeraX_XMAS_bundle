@@ -1,5 +1,5 @@
 <BundleInfo name="ChimeraX-XMAS"
-	    version="1.1.1" package="chimerax.xmas"
+	    version="1.1.2" package="chimerax.xmas"
   	    minSessionVersion="1" maxSessionVersion="1">
 
   <Author>I.M. Lagerwaard</Author>

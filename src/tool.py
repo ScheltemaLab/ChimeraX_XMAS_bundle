@@ -14,6 +14,7 @@
 
       
 from .info_file import InfoFile
+from .integrate import Integrate
 from .matplotlib_venn._venn2 import venn2
 from .matplotlib_venn._venn3 import venn3
 from .read_evidence import Evidence
@@ -35,13 +36,13 @@ import os
 from Qt.QtCore import Qt
 from Qt.QtGui import QDoubleValidator, QIntValidator
 from Qt.QtWidgets import (QVBoxLayout, QGridLayout, QHBoxLayout,
-                             QTreeWidget, QAbstractItemView, QPushButton,
-                             QLabel, QCheckBox, QDialogButtonBox,
-                             QLineEdit, QSpacerItem, QSizePolicy, 
-                             QTreeWidgetItemIterator, QFileDialog,
-                             QTreeWidgetItem, QListWidget, QListWidgetItem,
-                             QComboBox, QButtonGroup, QRadioButton, 
-                             QStyledItemDelegate)     
+                          QTreeWidget, QAbstractItemView, QPushButton,
+                          QLabel, QCheckBox, QDialogButtonBox,
+                          QLineEdit, QSpacerItem, QSizePolicy, 
+                          QTreeWidgetItemIterator, QFileDialog,
+                          QTreeWidgetItem, QListWidget, QListWidgetItem,
+                          QComboBox, QButtonGroup, QRadioButton, 
+                          QStyledItemDelegate)     
 from qtrangeslider import QRangeSlider
 import re
 import seaborn as sns
@@ -203,7 +204,7 @@ class XMAS(ToolInstance):
         elif (isinstance(model, PseudobondGroup) and model.name[-3:] == ".pb"):
             model.structure_type = "Pb"                 
 
-            
+           
     def get_ids(self, model):
         
         # Get the IDs of the molecular models connected via the pb model, to
@@ -588,7 +589,9 @@ class XMAS(ToolInstance):
         max_score = 0
         
         for score in scores:
-            if float(score) <= max_score:
+            if score == "":
+                return ""
+            elif float(score) <= max_score:
                 continue
             max_score = score
             
@@ -805,6 +808,7 @@ class XMAS(ToolInstance):
                 distance = new_pb.length
             max_score = 0
             has_peptide_pairs = False
+            has_score = True
             for i, peptide_pair in enumerate(peptide_pairs):
                 if peptide_pair is None:
                     continue
@@ -820,11 +824,16 @@ class XMAS(ToolInstance):
                     new_pb.indices[i] = index
                 # Attach a score to the new pb if applicable
                 score = peptide_pair.Score
-                if score <= max_score:
+                if score == "":
+                    has_score = False
+                    break
+                elif score <= max_score:
                     continue
                 max_score = score
-            if has_peptide_pairs:
+            if (has_score and has_peptide_pairs):
                 new_pb.score = max_score
+            elif (not has_score and has_peptide_pairs):
+                new_pb.score = ""
   
         self.write_file(file_path, group, file_type=".pb")
         print("Pseudobonds are stored in %s" % file_path)
@@ -968,7 +977,7 @@ class XMAS(ToolInstance):
         # features for analysis of pbs
         
         title = "Analyze pseudobonds in available set"         
-        self.analyze_dialog = self.create_child_window(title)
+        self.analyze_dialog = self.create_child_window(self.tool_window, title)
 
         pbs_dict = self.get_pseudobonds_dictionary(pbs)
 
@@ -1018,11 +1027,11 @@ class XMAS(ToolInstance):
 
         self.analyze_dialog.ui_area.setLayout(layout)
         self.analyze_dialog.manage(None)
+        
 
+    def create_child_window(self, parent, title):
         
-    def create_child_window(self, title):
-        
-        window = self.tool_window.create_child_window(title)
+        window = parent.create_child_window(title)
         
         return window
 
@@ -1242,7 +1251,7 @@ class XMAS(ToolInstance):
         layout = QGridLayout()
         
         title = "Export subset of pseudobonds in the available set"
-        self.subset_dialog = self.create_child_window(title)
+        self.subset_dialog = self.create_child_window(self.tool_window, title)
 
         self.dialog_model_selector = QTreeWidget()
         self.dialog_model_selector.setHeaderLabels(["Name", "ID"])
@@ -1311,7 +1320,6 @@ class XMAS(ToolInstance):
         self.checkbox_pb = QCheckBox(".pb")
         self.checkbox_pb.setChecked(True)
         self.checkbox_disvis = QCheckBox("DisVis")
-        self.checkbox_haddock = QCheckBox("HADDOCK")
         checkboxes = {"Pb":self.checkbox_pb, "DisVis":self.checkbox_disvis}
         
         checkbox_layout = QHBoxLayout()
@@ -1351,7 +1359,7 @@ class XMAS(ToolInstance):
         make_score_slider = True
         for group in pbs.by_group:
             pb = group[1][0]
-            if not hasattr(pb, "score"):
+            if (not hasattr(pb, "score") or pb.score == ""):
                 make_score_slider = False
                 break
         if make_score_slider:
@@ -1392,7 +1400,7 @@ class XMAS(ToolInstance):
             if pb.score <= maximum:
                 continue
             maximum = pb.score
-
+            
         return int(maximum) + 1
 
 
@@ -1521,7 +1529,8 @@ class XMAS(ToolInstance):
         # Dialog to specify fixed and scanning chain, and minimum and maximum
         # distance for DisVis restraints file
 
-        self.disvis_dialog = self.create_child_window("Create DisVis input "
+        self.disvis_dialog = self.create_child_window(self.tool_window,
+                                                      "Create DisVis input "
                                                       "file")
         
         models_layout = QHBoxLayout()
@@ -1534,7 +1543,7 @@ class XMAS(ToolInstance):
                            "Scanning chain:": scanning_layout}
         groups = [None] * len(chain_selection)
         
-        # Create radio buttons for all chains
+        # Create radio buttons for all models
         i = 0  
         for chain in chain_selection:
             layout = chain_selection[chain]
@@ -1697,7 +1706,8 @@ class XMAS(ToolInstance):
         # Show the dialog with visualization options
         
         title = "Visualization settings of pseudobonds in the available set"
-        self.visualize_dialog = self.create_child_window(title)
+        self.visualize_dialog = self.create_child_window(self.tool_window, 
+                                                         title)
         visualize_dialog = self.visualize_dialog
         # Gradient colors for "Main" should override the color set with the 
         # color button. Create a "gradient_active" attribute for this
@@ -2115,9 +2125,11 @@ class XMAS(ToolInstance):
         # If not, print a message
         if selection is None:
             print("Please select pseudobonds")
+            return True
         # If pbs are selected, execute a function
         else:
             function(selection)
+            return False
 
 
     def get_pseudobonds(self):
@@ -2152,11 +2164,9 @@ class XMAS(ToolInstance):
 
     def show_integrate_dialog(self):
         
-        # Show the dialog for integrative modeling (built in ZScoreSelector)
+        # Show the dialog with Integrate options 
         
-        from .z_score import ZScoreSelector
-        
-        ZScoreSelector(self)  
+        self.integrate = Integrate(self)
         
 
 class Alignment:
