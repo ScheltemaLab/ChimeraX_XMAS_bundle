@@ -1894,10 +1894,9 @@ class XMAS(ToolInstance):
         visualize_dialog.cleanup = closing_function
         apply_cancel.rejected.connect(visualize_dialog.destroy)
         
-        spacer = QSpacerItem(0, 0, QSizePolicy.Expanding)
         no_cols = layout.columnCount()
-        layout.addItem(spacer, 1, no_cols, 1, 2)
-        layout.addItem(spacer, 2, no_cols - 1, 1, 2)
+        layout.addItem(QSpacerItem(0, 0, QSizePolicy.Expanding), 1, no_cols, 1, 2)
+        layout.addItem(QSpacerItem(0, 0, QSizePolicy.Expanding), 2, no_cols - 1, 1, 2)
         layout.addWidget(save_box, 2, layout.columnCount())
         layout.addWidget(apply_cancel, 1, layout.columnCount(), 2, 1)
 
