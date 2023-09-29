@@ -6,6 +6,7 @@ mirror_github_job:
   stage: mirror  
   tags: [xmas]
   script:
+    - git remote add github_mirror "https://$BASTIAAN_ACCESS@github.com/ScheltemaLab/ChimeraX_bundle"
     - git pull github_mirror HEAD:main
     - git push github_mirror HEAD:main
   only:
