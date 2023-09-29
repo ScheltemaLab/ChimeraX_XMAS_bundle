@@ -1,0 +1,4 @@
+28/09/2023
+- Merged changes by Micha Birklbauer to fix crash with the visualize dialog
+- Visualize dialog is shown once. Repeat clicks of the button do not result in further instances.
+- When the session is closed, XMAS does not persist any longer.
