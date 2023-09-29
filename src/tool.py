@@ -55,7 +55,7 @@ class XMAS(ToolInstance):
     # among running tools and so on.
     
     # Does this instance persist when session closes
-    SESSION_ENDURING = True  
+    SESSION_ENDURING = False  
     # We do save/restore in sessions  
     SESSION_SAVE = True     
     help = "help:user/tools/manual.html"    
@@ -90,6 +90,9 @@ class XMAS(ToolInstance):
         
         # Method to build and show the main window
         self._build_ui()
+        
+        # General state trackers
+        self.visualize_dialog = None
         
         
     def trigger_handler(self):
@@ -240,6 +243,7 @@ class XMAS(ToolInstance):
         self.triggerset.remove_handler(self.change_selection_handler)
         self.triggerset.remove_handler(self.add_model_handler)
         self.triggerset.remove_handler(self.remove_model_handler)
+        
 
 
     def _build_ui(self):
@@ -1700,86 +1704,74 @@ class XMAS(ToolInstance):
         for pb in pseudobonds:
             pb.display = True
             
-
     def show_visualize_dialog(self, pbs):
-        
-        # Show the dialog with visualization options
-        
-        title = "Visualization settings of pseudobonds in the available set"
-        self.visualize_dialog = self.create_child_window(self.tool_window, 
-                                                         title)
-        visualize_dialog = self.visualize_dialog
-        # Gradient colors for "Main" should override the color set with the 
-        # color button. Create a "gradient_active" attribute for this
-        visualize_dialog.gradient_active = False
+        if self.visualize_dialog == None:
+            # Show the dialog with visualization options
+            title = "Visualization settings of pseudobonds in the available set"
+            self.visualize_dialog = self.create_child_window(self.tool_window, title)
+            
+            # Gradient colors for "Main" should override the color set with the 
+            # color button. Create a "gradient_active" attribute for this
+            self.visualize_dialog.gradient_active = False
 
-        outer_layout = QVBoxLayout()
-        settings_layout = QGridLayout()
+            outer_layout = QVBoxLayout()
+            settings_layout = QGridLayout()
 
-        # Store pseudobonds as instances of VisualizePseudobonds, a class that
-        # inherits from ChimeraX's Pseudobonds class
-        pointers = np.array([pb.cpp_pointer for pb in pbs], dtype=np.uintp)
-        pbs = VisualizePseudobonds(pointers)
-        
-        self.distance_policy = "distance"
-        self.score_policy = "score"
-        policies = [self.distance_policy, self.score_policy]
-        checkboxes_text = ["Gradient", "Cut-off"]
-        sliders = list(self.make_sliders(pbs, VisualizeSlider,
-                                         self.visualize_dialog))
-        visualize_dialog.sliders = dict(zip(policies, sliders))
-        visualize_dialog.color_keys = dict(zip(policies, 
-                                               [None] * len(policies)))
-        checkboxes = [None] * len(policies) * len(checkboxes_text)  
-        gradient_group = QButtonGroup(outer_layout)
-        gradient_group.setExclusive(False)
-        for i in range(len(checkboxes)):
-            checkboxes[i] = QCheckBox()
-        lower_layout, reset_values = self.create_lower_layout(pbs)
-        # Arrange that one gradient checkbox is unchecked when the other is
-        # checked
-        gradient_group.buttonToggled.connect(lambda button, checked:
-                                             self.uncheck(button, checked, 
-                                                          gradient_group, pbs))
+            # Store pseudobonds as instances of VisualizePseudobonds, a class that
+            # inherits from ChimeraX's Pseudobonds class
+            pointers = np.array([pb.cpp_pointer for pb in pbs], dtype=np.uintp)
+            pbs = VisualizePseudobonds(pointers)
+            
+            self.distance_policy = "distance"
+            self.score_policy = "score"
+            policies = [self.distance_policy, self.score_policy]
+            checkboxes_text = ["Gradient", "Cut-off"]
+            sliders = list(self.make_sliders(pbs, VisualizeSlider, self.visualize_dialog))
+            self.visualize_dialog.sliders = dict(zip(policies, sliders))
+            self.visualize_dialog.color_keys = dict(zip(policies, [None] * len(policies)))
+            checkboxes = [None] * len(policies) * len(checkboxes_text)  
+            gradient_group = QButtonGroup(outer_layout)
+            gradient_group.setExclusive(False)
+            for i in range(len(checkboxes)):
+                checkboxes[i] = QCheckBox()
+            lower_layout, reset_values = self.create_lower_layout(pbs)
+            # Arrange that one gradient checkbox is unchecked when the other is
+            # checked
+            gradient_group.buttonToggled.connect(lambda button, checked:self.uncheck(button, checked, gradient_group, pbs))
 
-        row = 0
-        for i, policy in enumerate(policies):
-            label = "Color by " + policy
-            settings_layout.addWidget(QLabel(label), row, 0, 1, 2)
-            slider = sliders[i]
-            settings_layout.addLayout(slider.layout, row, 2, 2, 1)
-            for j, text in enumerate(checkboxes_text):
-                index = row + j
-                checkbox = checkboxes[index]
-                checkbox.setText(text)
-                settings_layout.addWidget(checkbox, row + 1, j)
-                if not slider.enabled:
-                    checkbox.setEnabled(False)
-                gradient_box = checkboxes[row]
-                gradient_box.policy = policy
-                gradient_group.addButton(gradient_box)
-                cutoff_box = checkboxes[row + 1]
-                cutoff_box.clicked.connect(lambda checked, s=slider:
-                                           self.show_slider(checked, s))
-            row += 2
+            row = 0
+            for i, policy in enumerate(policies):
+                label = "Color by " + policy
+                settings_layout.addWidget(QLabel(label), row, 0, 1, 2)
+                slider = sliders[i]
+                settings_layout.addLayout(slider.layout, row, 2, 2, 1)
+                for j, text in enumerate(checkboxes_text):
+                    index = row + j
+                    checkbox = checkboxes[index]
+                    checkbox.setText(text)
+                    settings_layout.addWidget(checkbox, row + 1, j)
+                    if not slider.enabled:
+                        checkbox.setEnabled(False)
+                    gradient_box = checkboxes[row]
+                    gradient_box.policy = policy
+                    gradient_group.addButton(gradient_box)
+                    cutoff_box = checkboxes[row + 1]
+                    cutoff_box.clicked.connect(lambda checked, s=slider:self.show_slider(checked, s))
+                row += 2
 
-        outer_layout.addWidget(QLabel("Value-based coloring:"))    
-        outer_layout.addLayout(settings_layout)
-        outer_layout.addWidget(QLabel(""))
-        outer_layout.addWidget(QLabel("Customized styling:"))
-        outer_layout.addLayout(lower_layout)
-        visualize_dialog.ui_area.setLayout(outer_layout)
-        visualize_dialog.manage("side")
+            outer_layout.addWidget(QLabel("Value-based coloring:"))    
+            outer_layout.addLayout(settings_layout)
+            outer_layout.addWidget(QLabel(""))
+            outer_layout.addWidget(QLabel("Customized styling:"))
+            outer_layout.addLayout(lower_layout)
+            self.visualize_dialog.ui_area.setLayout(outer_layout)
+            self.visualize_dialog.manage("side")
         
 
     def create_lower_layout(self, pbs):
-        
         # Create the lower part of the Visualize dialog's layout
-        
-        color_button = MultiColorButton(has_alpha_channel=True,
-                                        max_size=(16,16))
-        color_button2 = MultiColorButton(has_alpha_channel=True,
-                                         max_size=(16,16))
+        color_button = MultiColorButton(has_alpha_channel=True, max_size=(16,16))
+        color_button2 = MultiColorButton(has_alpha_channel=True, max_size=(16,16))
 
         visualize_dialog = self.visualize_dialog
         
@@ -1799,9 +1791,7 @@ class XMAS(ToolInstance):
             elif row_name == visualize_dialog.row_names[1]:
                 color = visualize_dialog.custom_values[row_name][attribute][0]
             button.set_color(color)
-            button.color_changed.connect(lambda rgba: function(rgba, attribute,
-                                                               pbs, None,
-                                                               row_name))
+            button.color_changed.connect(lambda rgba: function(rgba, attribute, pbs, None, row_name))
         
         # Helper function to initialize the text box for changing radii
         def radii_edit_function(line_edit, attribute, row_name, function):
@@ -1887,11 +1877,13 @@ class XMAS(ToolInstance):
                                      self.apply_cancel(button,
                                                        save_box.checkState(),
                                                        pbs)) 
-        closing_function = lambda: self.reset_style(pbs, reset_values, 
-                                                    visualize_dialog.apply,
-                                                    visualize_dialog.color_keys
-                                                    )
-        visualize_dialog.cleanup = closing_function
+        
+        # local function to handle closure of this dialog
+        def visualize_dialog_close_function():
+            self.reset_style(pbs, reset_values, visualize_dialog.apply, visualize_dialog.color_keys)
+            self.visualize_dialog = None
+        
+        visualize_dialog.cleanup = visualize_dialog_close_function
         apply_cancel.rejected.connect(visualize_dialog.destroy)
         
         no_cols = layout.columnCount()
@@ -1901,7 +1893,6 @@ class XMAS(ToolInstance):
         layout.addWidget(apply_cancel, 1, layout.columnCount(), 2, 1)
 
         return layout, reset_values
-
 
     def change_pseudobonds_style(self, value, attribute, pbs,
                                  convert_function=None, row_name=""):
