@@ -287,8 +287,7 @@ class XMAS(ToolInstance):
         map_dict = {"model":self.model_selector, "file":self.file_selector}
         for key in map_dict:
             selector = map_dict[key]
-            function = lambda _, s=selector, t=key: self.map_button_clicked(s,
-                                                                            t)
+            function = lambda _, s=selector, t=key: self.map_button_clicked(s, t)
             map_button.clicked.connect(function)
         
         top_layout.addWidget(QLabel("Molecular models"), 0, 0)
