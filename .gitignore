@@ -1,0 +1,5 @@
+build/
+dist/
+src/.vs/
+src/__pycache__/
+ChimeraX_XMAS.egg-info/
