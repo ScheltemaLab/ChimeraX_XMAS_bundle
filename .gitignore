@@ -3,3 +3,5 @@ dist/
 src/.vs/
 src/__pycache__/
 ChimeraX_XMAS.egg-info/
+src/docs/user/tools/*
+user_manul/manual.html
